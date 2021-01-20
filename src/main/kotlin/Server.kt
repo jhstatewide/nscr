@@ -2,19 +2,26 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import io.javalin.Javalin
 import org.slf4j.LoggerFactory
+import java.io.InputStream
 import java.util.*
+import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
+
+val blobStore = H2BlobStore()
 
 fun main(args: Array<String>) {
     System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
     val logger = LoggerFactory.getLogger("NSCR")
-    val blobStore = H2BlobStore()
     val app = Javalin.create() { config ->
         config.enableDevLogging()
         config.requestLogger { ctx, ms ->
             logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
         }
     }.start(7000)
-    app.get("/") { ctx -> ctx.result("Hello World") }
+    app.get("/") { ctx ->
+        logger.info("Got a request to URL: ${ctx.url()}")
+        ctx.result("Hello World")
+    }
     app.get("/v2") { ctx ->
         ctx.header("Docker-Distribution-API-Version", "registry/2.0")
         ctx.result("200 OK")
@@ -22,8 +29,9 @@ fun main(args: Array<String>) {
     app.head("/v2/:image/blobs/:digest") { ctx ->
         val image = ctx.pathParam("image")
         val digest = Digest(ctx.pathParam("digest"))
-        logger.info("Want to upload $image $digest")
+        logger.info("Checking on $image $digest")
         if (!blobStore.hasBlob(digest)) {
+            logger.info("We do not have $digest")
             ctx.status(404)
         } else {
             ctx.status(200)
@@ -35,21 +43,39 @@ fun main(args: Array<String>) {
         // we want to return a session id here...
         val uuid = UUID.randomUUID()
         ctx.header("Location", "/v2/uploads/${uuid}")
+        ctx.header("Range", "0-0")
+        ctx.header("Docker-Upload-UUID", uuid.toString())
         ctx.status(202)
         ctx.result("OK")
     }
     app.patch("/v2/uploads/:uuid") { ctx ->
         logger.info("Got a request to patch a blob!")
         val uploadUUID = ctx.pathParam("uuid")
-        val contentRange = ctx.header("Content-Range")
-        val contentLength = ctx.header("Content-Length")
+        val contentRange = ctx.header("Range")
+        val contentLength = ctx.header("Length")
         val bodyStream = ctx.bodyAsInputStream()
         val blob = bodyStream.readAllBytes()
+        logger.info("The blob is: $blob")
+        logger.info("Patch uploads context headers: ${ctx.headerMap()}")
         logger.info("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
         ctx.status(202)
         // we have to give a location to upload to next...
         val uuid = UUID.randomUUID()
         ctx.header("Location", "/v2/uploads/${uuid}")
+        ctx.header("Range", "0-${blob.size}")
+        ctx.header("Content-Length", "0")
+        ctx.header("Docker-Upload-UUID", uploadUUID.toString())
         ctx.result("Accepted")
+    }
+    app.put("/v2/uploads/:uuid/") { ctx ->
+        val uuid = ctx.pathParam("uuid")
+        val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
+        logger.info("Got a put request for $uuid for $digest!")
+        val str = "String contents"
+        val `is`: InputStream = str.byteInputStream(StandardCharsets.UTF_8)
+        blobStore.addBlob(digest, `is`)
+        // 201 Created
+        ctx.status(201)
+        ctx.result("Created")
     }
 }
