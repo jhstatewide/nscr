@@ -34,6 +34,7 @@ fun main(args: Array<String>) {
             logger.info("We do not have $digest")
             ctx.status(404)
         } else {
+            logger.info("We DO have $digest")
             ctx.status(200)
             ctx.result("OK")
         }
@@ -76,6 +77,13 @@ fun main(args: Array<String>) {
         blobStore.addBlob(digest, `is`)
         // 201 Created
         ctx.status(201)
+        ctx.result("Created")
+    }
+    app.put("/v2/:image/manifests/:version") { ctx ->
+        ctx.status(201)
+        ctx.header("Location","http://haha.com")
+        ctx.header("Docker-Content-Digest", "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4")
+        ctx.header("Content-Length", "0")
         ctx.result("Created")
     }
 }
