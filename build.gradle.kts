@@ -18,6 +18,11 @@ dependencies {
     implementation("io.javalin:javalin:3.12.0")
     implementation("org.slf4j:slf4j-api:1.8.0-beta4")
     implementation("org.slf4j:slf4j-simple:1.8.0-beta4")
+    implementation("com.h2database:h2:1.4.200")
+    implementation("org.jdbi", "jdbi3-core", "3.8.2")
+    implementation("org.jdbi", "jdbi3-kotlin", "3.8.2")
+    implementation("org.jdbi", "jdbi3-kotlin-sqlobject", "3.8.2")
+
 }
 
 tasks.test {

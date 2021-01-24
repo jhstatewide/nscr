@@ -43,37 +43,38 @@ fun main(args: Array<String>) {
         // we want to return a session id here...
         val uuid = UUID.randomUUID()
         ctx.header("Location", "/v2/uploads/${uuid}")
-        ctx.header("Range", "0-0")
         ctx.header("Docker-Upload-UUID", uuid.toString())
         ctx.status(202)
         ctx.result("OK")
     }
     app.patch("/v2/uploads/:uuid") { ctx ->
-        logger.debug("Got a request to patch a blob!")
-        val uploadUUID = ctx.pathParam("uuid")
-        val contentRange = ctx.header("Range")
-        val contentLength = ctx.header("Length")
-        val bodyStream = ctx.bodyAsInputStream()
-        val blob = bodyStream.readAllBytes()
-        logger.debug("The blob is: $blob")
-        logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
-        logger.debug("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
-        ctx.status(202)
-        // we have to give a location to upload to next...
-        val uuid = UUID.randomUUID()
-        ctx.header("Location", "/v2/uploads/${uuid}")
-        ctx.header("Range", "0-${blob.size}")
-        ctx.header("Content-Length", "0")
-        ctx.header("Docker-Upload-UUID", uploadUUID.toString())
-        ctx.result("Accepted")
+        try {
+            logger.debug("Got a request to patch a blob!")
+            val uploadUUID = ctx.pathParam("uuid")
+            val contentRange = ctx.header("Content-Range")
+            val contentLength = ctx.header("Content-Length")
+            logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
+            logger.debug("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
+            val bodyStream = ctx.bodyAsInputStream()
+            val blob = bodyStream.readAllBytes()
+            ctx.status(202)
+            // we have to give a location to upload to next...
+            val uuid = UUID.randomUUID()
+            ctx.header("Location", "/v2/uploads/${uuid}")
+            ctx.header("Range", "0-${blob.size}")
+            ctx.header("Content-Length", "0")
+            ctx.header("Docker-Upload-UUID", uploadUUID)
+            ctx.result("Accepted")
+        } catch (e: Exception) {
+            logger.warn("Error during patch: ${e.message}")
+        }
+
     }
     app.put("/v2/uploads/:uuid/") { ctx ->
         val uuid = ctx.pathParam("uuid")
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
         logger.debug("Got a put request for $uuid for $digest!")
-        val str = "String contents"
-        val blobInputStream: InputStream = str.byteInputStream(StandardCharsets.UTF_8)
-        blobStore.addBlob(digest, blobInputStream)
+        blobStore.addBlob(digest, ctx.bodyAsInputStream())
         // 201 Created
         ctx.status(201)
         ctx.result("Created")
