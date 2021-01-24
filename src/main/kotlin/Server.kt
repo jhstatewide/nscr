@@ -4,7 +4,6 @@ import io.javalin.Javalin
 import org.slf4j.LoggerFactory
 import java.io.InputStream
 import java.util.*
-import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 
 val blobStore = H2BlobStore()
@@ -19,7 +18,7 @@ fun main(args: Array<String>) {
         }
     }.start(7000)
     app.get("/") { ctx ->
-        logger.info("Got a request to URL: ${ctx.url()}")
+        logger.debug("Got a request to URL: ${ctx.url()}")
         ctx.result("Hello World")
     }
     app.get("/v2") { ctx ->
@@ -29,18 +28,18 @@ fun main(args: Array<String>) {
     app.head("/v2/:image/blobs/:digest") { ctx ->
         val image = ctx.pathParam("image")
         val digest = Digest(ctx.pathParam("digest"))
-        logger.info("Checking on $image $digest")
+        logger.debug("Checking on $image $digest")
         if (!blobStore.hasBlob(digest)) {
-            logger.info("We do not have $digest")
+            logger.debug("We do not have $digest")
             ctx.status(404)
         } else {
-            logger.info("We DO have $digest")
+            logger.debug("We DO have $digest")
             ctx.status(200)
             ctx.result("OK")
         }
     }
     app.post("/v2/:image/blobs/uploads") { ctx ->
-        logger.info("Got a post to UPLOADS!")
+        logger.debug("Got a post to UPLOADS!")
         // we want to return a session id here...
         val uuid = UUID.randomUUID()
         ctx.header("Location", "/v2/uploads/${uuid}")
@@ -50,15 +49,15 @@ fun main(args: Array<String>) {
         ctx.result("OK")
     }
     app.patch("/v2/uploads/:uuid") { ctx ->
-        logger.info("Got a request to patch a blob!")
+        logger.debug("Got a request to patch a blob!")
         val uploadUUID = ctx.pathParam("uuid")
         val contentRange = ctx.header("Range")
         val contentLength = ctx.header("Length")
         val bodyStream = ctx.bodyAsInputStream()
         val blob = bodyStream.readAllBytes()
-        logger.info("The blob is: $blob")
-        logger.info("Patch uploads context headers: ${ctx.headerMap()}")
-        logger.info("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
+        logger.debug("The blob is: $blob")
+        logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
+        logger.debug("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
         ctx.status(202)
         // we have to give a location to upload to next...
         val uuid = UUID.randomUUID()
@@ -71,10 +70,10 @@ fun main(args: Array<String>) {
     app.put("/v2/uploads/:uuid/") { ctx ->
         val uuid = ctx.pathParam("uuid")
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
-        logger.info("Got a put request for $uuid for $digest!")
+        logger.debug("Got a put request for $uuid for $digest!")
         val str = "String contents"
-        val `is`: InputStream = str.byteInputStream(StandardCharsets.UTF_8)
-        blobStore.addBlob(digest, `is`)
+        val blobInputStream: InputStream = str.byteInputStream(StandardCharsets.UTF_8)
+        blobStore.addBlob(digest, blobInputStream)
         // 201 Created
         ctx.status(201)
         ctx.result("Created")
