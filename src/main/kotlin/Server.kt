@@ -9,8 +9,8 @@ import java.nio.charset.StandardCharsets
 val blobStore = H2BlobStore()
 
 fun main(args: Array<String>) {
-    System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
-    val logger = LoggerFactory.getLogger("NSCR")
+    // System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
+    val logger = LoggerFactory.getLogger("nscr")
     val app = Javalin.create() { config ->
         config.enableDevLogging()
         config.requestLogger { ctx, ms ->
