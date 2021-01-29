@@ -6,6 +6,7 @@ import org.jdbi.v3.core.HandleConsumer
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
 import java.io.InputStream
+import java.lang.Exception
 
 
 class H2BlobStore: Blobstore {
@@ -32,7 +33,13 @@ class H2BlobStore: Blobstore {
     private val uploadedUUIDs = mutableSetOf<Digest>()
 
     override fun hasBlob(digest: Digest): Boolean {
-        return uploadedUUIDs.contains(digest)
+        val query = "SELECT COUNT(*) as matching_blob_count FROM blobs where digest = :digest;"
+        return jdbi.withHandle<Boolean, Exception> { handle ->
+            val statement = handle.createQuery(query).bind("digest", digest.digestString)
+            statement.map { rs, ctx ->
+                rs.getInt("matching_blob_count") > 0
+            }.first()
+        }
     }
 
     override fun addBlob(digest: Digest, inputStream: InputStream) {
