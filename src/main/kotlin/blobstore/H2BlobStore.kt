@@ -5,6 +5,7 @@ import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.HandleConsumer
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.lang.Exception
 
@@ -42,14 +43,22 @@ class H2BlobStore: Blobstore {
         }
     }
 
+    fun addBlob(digest: Digest, bytes: ByteArray) {
+        addBlob(digest, ByteArrayInputStream(bytes))
+    }
+
     override fun addBlob(digest: Digest, inputStream: InputStream) {
+        // let's slurp the stream to a variable and see how big it is...
+        val slurped = inputStream.readAllBytes()
+        logger.info("Size of blob in addBlob: ${slurped.size}")
+
         jdbi.useTransaction<RuntimeException> { handle ->
             val statement = handle.connection.prepareStatement("INSERT INTO blobs(digest, content) values (?, ?)")
             statement.setString(1, digest.digestString)
-            statement.setBinaryStream(2, inputStream)
+            statement.setBytes(2, slurped)
             val result = statement.executeUpdate()
-            logger.info("Blob inserted for ${digest.digestString}. Result: $result")
             handle.commit()
+            logger.info("Blob inserted for ${digest.digestString}. Result: $result")
         }
         uploadedUUIDs.add(digest)
     }

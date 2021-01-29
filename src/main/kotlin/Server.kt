@@ -55,8 +55,12 @@ fun main(args: Array<String>) {
             val contentLength = ctx.header("Content-Length")
             logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
             logger.debug("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
-            val bodyStream = ctx.bodyAsInputStream()
-            val blob = bodyStream.readAllBytes()
+
+            // val bodyStream = ctx.bodyAsInputStream()
+            val blob = ctx.bodyAsBytes()
+            logger.info("The patched blob is: ${blob.size} bytes long!")
+            // TODO: we need to add the blob here and POST i guess completes things???
+            // plan is take the upload and then somehow correlate to the post and apply the digest...
             ctx.status(202)
             // we have to give a location to upload to next...
             val uuid = UUID.randomUUID()
@@ -74,7 +78,9 @@ fun main(args: Array<String>) {
         val uuid = ctx.pathParam("uuid")
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
         logger.debug("Got a put request for $uuid for $digest!")
-        blobStore.addBlob(digest, ctx.bodyAsInputStream())
+        val bytesFromBody = ctx.bodyAsBytes()
+        logger.debug("The body is: ${String(bytesFromBody)}")
+        blobStore.addBlob(digest, bytesFromBody)
         // 201 Created
         ctx.status(201)
         ctx.result("Created")
