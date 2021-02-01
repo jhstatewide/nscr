@@ -1,0 +1,9 @@
+import java.util.*
+
+inline class SessionID(val id: String)
+
+class SessionTracker {
+    fun newSession(): SessionID {
+        return SessionID(UUID.randomUUID().toString())
+    }
+}

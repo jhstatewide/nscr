@@ -2,11 +2,10 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import io.javalin.Javalin
 import org.slf4j.LoggerFactory
-import java.io.InputStream
 import java.util.*
-import java.nio.charset.StandardCharsets
 
 val blobStore = H2BlobStore()
+val sessionTracker = SessionTracker()
 
 fun main(args: Array<String>) {
     // System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
@@ -41,22 +40,22 @@ fun main(args: Array<String>) {
     app.post("/v2/:image/blobs/uploads") { ctx ->
         logger.debug("Got a post to UPLOADS!")
         // we want to return a session id here...
-        val uuid = UUID.randomUUID()
-        ctx.header("Location", "/v2/uploads/${uuid}")
-        ctx.header("Docker-Upload-UUID", uuid.toString())
+        val sessionID = sessionTracker.newSession()
+        ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
+        ctx.header("Docker-Upload-UUID", sessionID.id)
         ctx.status(202)
         ctx.result("OK")
     }
-    app.patch("/v2/uploads/:uuid") { ctx ->
+    app.patch("/v2/uploads/:sessionID/:blobNumber") { ctx ->
         try {
             logger.debug("Got a request to patch a blob!")
-            val uploadUUID = ctx.pathParam("uuid")
+            val sessionID = ctx.pathParam("sessionID")
+            val blobNumber = ctx.pathParam("blobNumber")
             val contentRange = ctx.header("Content-Range")
             val contentLength = ctx.header("Content-Length")
             logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
-            logger.debug("Uploading to $uploadUUID with content range: $contentRange and length: $contentLength")
+            logger.debug("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
-            // val bodyStream = ctx.bodyAsInputStream()
             val blob = ctx.bodyAsBytes()
             logger.info("The patched blob is: ${blob.size} bytes long!")
             // TODO: we need to add the blob here and POST i guess completes things???
@@ -67,7 +66,7 @@ fun main(args: Array<String>) {
             ctx.header("Location", "/v2/uploads/${uuid}")
             ctx.header("Range", "0-${blob.size}")
             ctx.header("Content-Length", "0")
-            ctx.header("Docker-Upload-UUID", uploadUUID)
+            ctx.header("Docker-Upload-UUID", sessionID)
             ctx.result("Accepted")
         } catch (e: Exception) {
             logger.warn("Error during patch: ${e.message}")

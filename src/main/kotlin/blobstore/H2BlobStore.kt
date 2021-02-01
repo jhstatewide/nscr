@@ -1,5 +1,6 @@
 package blobstore
 
+import SessionID
 import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.HandleConsumer
@@ -25,13 +26,23 @@ class H2BlobStore: Blobstore {
 
     private fun provisionTables() {
         jdbi.useTransaction<RuntimeException> { handle: Handle ->
-            handle.execute("CREATE TABLE IF NOT EXISTS blobs(digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
+            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
             handle.commit()
             logger.info("H2 Blobstore initialized!")
         }
     }
 
     private val uploadedUUIDs = mutableSetOf<Digest>()
+
+    override fun nextSessionLocation(sessionID: SessionID): String {
+        // count # of blobs with matching session ID
+        // return session ID + the sequence...
+        val sessionBlobCount = jdbi.withHandle<Int, Exception> { handle ->
+            handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID")
+                .bind("sessionID", sessionID.id).map { rs, ctx -> rs.getInt("blobCount")}.first() ?: 0
+        }
+        return sessionID.id + "/" + sessionBlobCount
+    }
 
     override fun hasBlob(digest: Digest): Boolean {
         val query = "SELECT COUNT(*) as matching_blob_count FROM blobs where digest = :digest;"
