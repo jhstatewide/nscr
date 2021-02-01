@@ -26,7 +26,7 @@ class H2BlobStore: Blobstore {
 
     private fun provisionTables() {
         jdbi.useTransaction<RuntimeException> { handle: Handle ->
-            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
+            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
             handle.commit()
             logger.info("H2 Blobstore initialized!")
         }
@@ -74,7 +74,29 @@ class H2BlobStore: Blobstore {
         uploadedUUIDs.add(digest)
     }
 
+    override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream) {
+        // let's slurp the stream to a variable and see how big it is...
+        val slurped = bodyAsInputStream.readAllBytes()
+        logger.info("Size of blob in addBlob: ${slurped.size}")
+
+        jdbi.useTransaction<RuntimeException> { handle ->
+            val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
+            statement.setString(1, sessionID.id)
+            if (blobNumber != null) {
+                statement.setInt(2, blobNumber)
+            }
+            statement.setBinaryStream(3, bodyAsInputStream)
+            val result = statement.executeUpdate()
+            handle.commit()
+            logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
+        }
+    }
+
     override fun removeBlob(digest: Digest) {
+        TODO("Not yet implemented")
+    }
+
+    override fun buildBlob(sessionID: SessionID, digest: Digest) {
         TODO("Not yet implemented")
     }
 }

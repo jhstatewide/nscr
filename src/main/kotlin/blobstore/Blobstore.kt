@@ -10,4 +10,6 @@ interface Blobstore {
     fun addBlob(digest: Digest, inputStream: InputStream)
     fun nextSessionLocation(sessionID: SessionID): String
     fun removeBlob(digest: Digest)
+    fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream)
+    fun buildBlob(sessionID: SessionID, digest: Digest)
 }

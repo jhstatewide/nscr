@@ -48,41 +48,45 @@ fun main(args: Array<String>) {
     }
     app.patch("/v2/uploads/:sessionID/:blobNumber") { ctx ->
         try {
-            logger.debug("Got a request to patch a blob!")
-            val sessionID = ctx.pathParam("sessionID")
-            val blobNumber = ctx.pathParam("blobNumber")
+            logger.info("Got a request to patch a blob!")
+            val sessionID = SessionID(ctx.pathParam("sessionID"))
+            val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val contentRange = ctx.header("Content-Range")
-            val contentLength = ctx.header("Content-Length")
-            logger.debug("Patch uploads context headers: ${ctx.headerMap()}")
-            logger.debug("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
+            val contentLength = ctx.header("Content-Length")?.toIntOrNull()
+            logger.info("Patch uploads context headers: ${ctx.headerMap()}")
+            logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
-            val blob = ctx.bodyAsBytes()
-            logger.info("The patched blob is: ${blob.size} bytes long!")
+            if (contentLength != null && contentLength > 0) {
+                blobStore.addBlob(sessionID, blobNumber, ctx.bodyAsInputStream())
+            }
             // TODO: we need to add the blob here and POST i guess completes things???
             // plan is take the upload and then somehow correlate to the post and apply the digest...
             ctx.status(202)
             // we have to give a location to upload to next...
-            val uuid = UUID.randomUUID()
-            ctx.header("Location", "/v2/uploads/${uuid}")
-            ctx.header("Range", "0-${blob.size}")
+            ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
+            ctx.header("Range", "0-0")
             ctx.header("Content-Length", "0")
-            ctx.header("Docker-Upload-UUID", sessionID)
+            ctx.header("Docker-Upload-UUID", sessionID.id)
             ctx.result("Accepted")
         } catch (e: Exception) {
-            logger.warn("Error during patch: ${e.message}")
+            logger.warn("Error during patch: ${e.message} for ${ctx.method()}/${ctx.url()}")
+            e.printStackTrace()
+            throw e
         }
 
     }
-    app.put("/v2/uploads/:uuid/") { ctx ->
-        val uuid = ctx.pathParam("uuid")
+    app.put("/v2/uploads/:sessionID/:blobNumber") { ctx ->
+        val sessionID = SessionID(ctx.pathParam("sessionID"))
+        val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
-        logger.debug("Got a put request for $uuid for $digest!")
-        val bytesFromBody = ctx.bodyAsBytes()
-        logger.debug("The body is: ${String(bytesFromBody)}")
-        blobStore.addBlob(digest, bytesFromBody)
+        logger.debug("Got a put request for $sessionID/$blobNumber for $digest!")
         // 201 Created
+        // TODO: we MUST link sessionID to the uploaded blob digest!
+        blobStore.buildBlob(sessionID, digest)
+        ctx.header("Location", "http://hoho.com")
         ctx.status(201)
         ctx.result("Created")
+        logger.debug("PUT REQUEST DONE!")
     }
     app.put("/v2/:image/manifests/:version") { ctx ->
         ctx.status(201)
