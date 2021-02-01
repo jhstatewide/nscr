@@ -4,7 +4,7 @@ plugins {
     kotlin("jvm") version "1.4.21"
 }
 
-group = "com.statewidesoftware.com"
+group = "com.statewidesoftware"
 version = "1.0-SNAPSHOT"
 
 repositories {

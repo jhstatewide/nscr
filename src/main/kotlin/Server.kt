@@ -41,39 +41,36 @@ fun main(args: Array<String>) {
         logger.debug("Got a post to UPLOADS!")
         // we want to return a session id here...
         val sessionID = sessionTracker.newSession()
-        ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
+        val newLocation = "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}"
+        logger.info("Telling the uploader to go to $newLocation")
+        ctx.header("Location", newLocation)
         ctx.header("Docker-Upload-UUID", sessionID.id)
         ctx.status(202)
         ctx.result("OK")
     }
+
     app.patch("/v2/uploads/:sessionID/:blobNumber") { ctx ->
-        try {
-            logger.info("Got a request to patch a blob!")
-            val sessionID = SessionID(ctx.pathParam("sessionID"))
-            val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
-            val contentRange = ctx.header("Content-Range")
-            val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-            logger.info("Patch uploads context headers: ${ctx.headerMap()}")
-            logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
-            if (contentLength != null && contentLength > 0) {
-                blobStore.addBlob(sessionID, blobNumber, ctx.bodyAsInputStream())
-            }
-            // TODO: we need to add the blob here and POST i guess completes things???
-            // plan is take the upload and then somehow correlate to the post and apply the digest...
-            ctx.status(202)
-            // we have to give a location to upload to next...
-            ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
-            ctx.header("Range", "0-0")
-            ctx.header("Content-Length", "0")
-            ctx.header("Docker-Upload-UUID", sessionID.id)
-            ctx.result("Accepted")
-        } catch (e: Exception) {
-            logger.warn("Error during patch: ${e.message} for ${ctx.method()}/${ctx.url()}")
-            e.printStackTrace()
-            throw e
-        }
+        logger.info("Got a request to patch a blob!")
+        val sessionID = SessionID(ctx.pathParam("sessionID"))
+        val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
+        val contentRange = ctx.header("Content-Range")
+        val contentLength = ctx.header("Content-Length")?.toIntOrNull()
+        logger.info("Patch uploads context headers: ${ctx.headerMap()}")
+        logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
+        val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyAsInputStream())
+
+        // TODO: we need to add the blob here and POST i guess completes things???
+        // plan is take the upload and then somehow correlate to the post and apply the digest...
+        ctx.status(202)
+        // we have to give a location to upload to next...
+        ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
+        ctx.header("Range", "0-${uploadedBytes}")
+        ctx.header("Content-Length", "0")
+        ctx.header("Docker-Upload-UUID", sessionID.id)
+        ctx.result("Accepted")
+        logger.info("PATCH ALL SET!")
     }
     app.put("/v2/uploads/:sessionID/:blobNumber") { ctx ->
         val sessionID = SessionID(ctx.pathParam("sessionID"))
@@ -89,8 +86,9 @@ fun main(args: Array<String>) {
         logger.debug("PUT REQUEST DONE!")
     }
     app.put("/v2/:image/manifests/:version") { ctx ->
+        logger.info("Manifest all good!")
         ctx.status(201)
-        ctx.header("Location","http://haha.com")
+        ctx.header("Location", "http://haha.com")
         ctx.header("Docker-Content-Digest", "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4")
         ctx.header("Content-Length", "0")
         ctx.result("Created")
