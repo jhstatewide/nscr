@@ -2,7 +2,17 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import io.javalin.Javalin
 import org.slf4j.LoggerFactory
+import java.security.MessageDigest
 import java.util.*
+
+
+fun generateSHA256(input: String): String {
+    val bytes = input.toByteArray()
+    val md = MessageDigest.getInstance("SHA-256")
+    val digest = md.digest(bytes)
+    return digest.fold("", { str, it -> str + "%02x".format(it) })
+}
+
 
 val blobStore = H2BlobStore()
 val sessionTracker = SessionTracker()
@@ -91,11 +101,25 @@ fun main(args: Array<String>) {
         ctx.result("Created")
         logger.debug("PUT REQUEST DONE!")
     }
-    app.put("/v2/:image/manifests/:version") { ctx ->
-        logger.info("Manifest all good!")
+    app.put("/v2/:name/manifests/:reference") { ctx ->
+
+        val name = ctx.pathParam("name")
+        val reference = ctx.pathParam("reference")
+        logger.debug("Tackling manifest named $name:$reference!")
+
+        val contentType = ctx.header("Content-Type")
+        val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
+        if (contentType != manifestType) {
+            error("Mime type blooper! You must upload manifest of type: $manifestType instead of $contentType!")
+        }
+        val body = ctx.body()
+        logger.info("Uploaded manifest is: $body")
+        // get digest for this crap...
+        val sha = generateSHA256(body)
+        val digestString = "sha256:$sha"
         ctx.status(201)
         ctx.header("Location", "http://haha.com")
-        ctx.header("Docker-Content-Digest", "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4")
+        ctx.header("Docker-Content-Digest", digestString)
         ctx.header("Content-Length", "0")
         ctx.result("Created")
     }
