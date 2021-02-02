@@ -6,6 +6,7 @@ import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
 import java.io.InputStream
+import java.lang.StringBuilder
 import kotlin.Exception
 
 class H2BlobStore: Blobstore {
@@ -151,5 +152,23 @@ class H2BlobStore: Blobstore {
                     Digest(rs.getString("digest"))
                 }.firstOrNull()
         } ?: error("Cannot find manifest for $image!")
+    }
+
+    override fun eachBlob(function: (String) -> StringBuilder) {
+        jdbi.useHandle<Exception> { handle ->
+            handle.createQuery("select * from blobs").map { rs, ctx ->
+                rs.getString("digest")
+            }.forEach { function(it) }
+        }
+    }
+
+    override fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit) {
+        val handle = jdbi.open()
+        val stream = handle.createQuery("select * from blobs where digest = :digest")
+            .bind("digest", imageVersion.tag)
+            .map { rs, _ ->
+                rs.getBinaryStream("content")
+            }.first()
+        handler(stream, handle)
     }
 }

@@ -2,7 +2,9 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
 import io.javalin.Javalin
+import org.jdbi.v3.core.Handle
 import org.slf4j.LoggerFactory
+import java.lang.StringBuilder
 import java.security.MessageDigest
 import java.util.*
 
@@ -28,6 +30,11 @@ fun main(args: Array<String>) {
     }.start(7000)
     app.before { ctx ->
         logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
+    }
+    app.after("/v2/:name/blobs/:tag") { ctx ->
+        logger.debug("Closing database handle!")
+        // TODO: run later...
+        // ctx.attribute<Handle>("handle")?.close()
     }
     app.get("/") { ctx ->
         logger.debug("Got a request to URL: ${ctx.url()}")
@@ -147,5 +154,22 @@ fun main(args: Array<String>) {
         ctx.header("Docker-Content-Digest", digestString)
         ctx.header("Content-Length", "0")
         ctx.result("Created")
+    }
+    app.get("/api/blobs") { ctx ->
+        val blobList = StringBuilder()
+        blobStore.eachBlob { blob: String ->
+            blobList.append(blob + "\n")
+        }
+        ctx.result(blobList.toString())
+    }
+    app.get("/v2/:name/blobs/:tag") { ctx ->
+        val name = ctx.pathParam("name")
+        val tagOrDigest = ctx.pathParam("tag")
+        val imageVersion = ImageVersion(name, tagOrDigest)
+        blobStore.getBlob(imageVersion) { stream, handle ->
+            ctx.result(stream)
+            ctx.status(200)
+            ctx.attribute("handle", handle)
+        }
     }
 }
