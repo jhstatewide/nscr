@@ -13,7 +13,6 @@ fun generateSHA256(input: String): String {
     return digest.fold("", { str, it -> str + "%02x".format(it) })
 }
 
-
 val blobStore = H2BlobStore()
 val sessionTracker = SessionTracker()
 
@@ -66,19 +65,14 @@ fun main(args: Array<String>) {
     }
 
     app.patch("/v2/uploads/:sessionID/:blobNumber") { ctx ->
-
-        logger.info("Got a request to patch a blob!")
         val sessionID = SessionID(ctx.pathParam("sessionID"))
         val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
         val contentRange = ctx.header("Content-Range")
         val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-        logger.info("Patch uploads context headers: ${ctx.headerMap()}")
         logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
         val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyAsInputStream())
 
-        // TODO: we need to add the blob here and POST i guess completes things???
-        // plan is take the upload and then somehow correlate to the post and apply the digest...
         ctx.status(202)
         // we have to give a location to upload to next...
         ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
@@ -86,7 +80,6 @@ fun main(args: Array<String>) {
         ctx.header("Content-Length", "0")
         ctx.header("Docker-Upload-UUID", sessionID.id)
         ctx.result("Accepted")
-        logger.info("PATCH ALL SET!")
     }
     app.put("/v2/uploads/:sessionID/:blobNumber") { ctx ->
         val sessionID = SessionID(ctx.pathParam("sessionID"))
@@ -96,10 +89,9 @@ fun main(args: Array<String>) {
         // 201 Created
         // TODO: we MUST link sessionID to the uploaded blob digest!
         blobStore.buildBlob(sessionID, digest)
-        ctx.header("Location", "http://hoho.com")
+        ctx.header("Location", "http://hoho.com") // TODO: fix me! Should be able to pull blob from here...
         ctx.status(201)
         ctx.result("Created")
-        logger.debug("PUT REQUEST DONE!")
     }
     app.put("/v2/:name/manifests/:reference") { ctx ->
 
