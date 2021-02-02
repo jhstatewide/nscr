@@ -3,13 +3,10 @@ package blobstore
 import SessionID
 import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
-import org.jdbi.v3.core.HandleConsumer
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
-import java.io.ByteArrayInputStream
 import java.io.InputStream
-import java.lang.Exception
-
+import kotlin.Exception
 
 class H2BlobStore: Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
@@ -27,6 +24,7 @@ class H2BlobStore: Blobstore {
     private fun provisionTables() {
         jdbi.useTransaction<RuntimeException> { handle: Handle ->
             handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
+            handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
             handle.commit()
             logger.info("H2 Blobstore initialized!")
         }
@@ -90,5 +88,68 @@ class H2BlobStore: Blobstore {
         } else {
             TODO("Not yet able to stitch multi-part uploads! BlobCount for ${sessionID.id} is $blobCount")
         }
+    }
+
+    override fun addManifest(image: ImageVersion, digest: Digest, manifestJson: String) {
+        jdbi.useTransaction<Exception> { handle ->
+            handle.createUpdate("DELETE FROM MANIFESTS WHERE name = :name and tag = :tag")
+                .bind("name", image.name)
+                .bind("tag", image.tag)
+                .execute()
+            handle.createUpdate("INSERT INTO MANIFESTS (name, tag, manifest, digest) values (:name, :tag, :manifest, :digest);")
+                .bind("name", image.name)
+                .bind("tag", image.tag)
+                .bind("manifest", manifestJson)
+                .bind("digest", "sha256:${digest.digestString}")
+                .execute()
+            logger.info("Manifest added for $image with digest: sha256:${digest.digestString}")
+            handle.commit()
+        }
+    }
+
+    override fun getManifest(image: ImageVersion): String {
+        return jdbi.withHandle<String?, Exception> { handle ->
+            if (image.tag.startsWith("sha256:")) {
+                logger.debug("Looking up by digest!")
+                val query = "select manifest from manifests where name = :name and digest = :digest;"
+                handle.createQuery(query)
+                    .bind("name", image.name)
+                    .bind("digest", image.tag)
+                    .map { rs, _ ->
+                        rs.getString("manifest")
+                    }.firstOrNull()
+            } else {
+                val query = "select manifest from manifests where name = :name and tag = :tag;"
+                handle.createQuery(query)
+                    .bind("name", image.name)
+                    .bind("tag", image.tag)
+                    .map { rs, _ ->
+                        rs.getString("manifest")
+                    }.firstOrNull()
+            }
+        } ?: error("Cannot find manifest for $image!")
+    }
+
+    override fun hasManifest(image: ImageVersion): Boolean {
+        return jdbi.withHandle<Int, Exception> { handle ->
+            handle.createQuery("SELECT count(*) as count from manifests where name = :name and tag = :tag")
+                .bind("name", image.name)
+                .bind("tag", image.tag)
+                .map { rs, _ ->
+                    rs.getInt("count")
+                }.first()
+        } > 0
+    }
+
+    override fun digestForManifest(image: ImageVersion): Digest {
+        return jdbi.withHandle<Digest?, Exception> { handle ->
+            val query = "select digest from manifests where name = :name and tag = :tag;"
+            handle.createQuery(query)
+                .bind("name", image.name)
+                .bind("tag", image.tag)
+                .map { rs, _ ->
+                    Digest(rs.getString("digest"))
+                }.firstOrNull()
+        } ?: error("Cannot find manifest for $image!")
     }
 }

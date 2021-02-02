@@ -1,5 +1,6 @@
 import blobstore.Digest
 import blobstore.H2BlobStore
+import blobstore.ImageVersion
 import io.javalin.Javalin
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
@@ -25,6 +26,9 @@ fun main(args: Array<String>) {
             logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
         }
     }.start(7000)
+    app.before { ctx ->
+        logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
+    }
     app.get("/") { ctx ->
         logger.debug("Got a request to URL: ${ctx.url()}")
         ctx.result("Hello World")
@@ -45,6 +49,40 @@ fun main(args: Array<String>) {
             ctx.status(200)
             ctx.result("OK")
         }
+    }
+    app.head("/v2/:name/manifests/:tag") { ctx ->
+        val name = ctx.pathParam("name")
+        val tag = ctx.pathParam("tag")
+        val imageVersion = ImageVersion(name, tag)
+        if(blobStore.hasManifest(imageVersion)) {
+            logger.debug("We DO have manifest for $imageVersion!")
+            ctx.status(200)
+        } else {
+            logger.debug("We DO NOT have manifest for $imageVersion!")
+            ctx.status(404)
+        }
+    }
+    app.get("/v2/:name/manifests/:tag") { ctx ->
+        val name = ctx.pathParam("name")
+        val tagOrDigest = ctx.pathParam("tag")
+        val imageVersion = ImageVersion(name, tagOrDigest)
+        val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
+        if (imageVersion.tag.startsWith("sha256:")) {
+            // by digest
+            logger.debug("Want to look up digest for $imageVersion!")
+            ctx.status(200)
+            ctx.header("Docker-Content-Digest", imageVersion.tag)
+            ctx.contentType(manifestType)
+            ctx.result(blobStore.getManifest(imageVersion))
+        } else {
+            val digest = blobStore.digestForManifest(imageVersion)
+            logger.debug("Digest for manifest $imageVersion is $digest")
+            ctx.status(200)
+            ctx.header("Docker-Content-Digest", digest.digestString)
+            ctx.contentType(manifestType)
+            ctx.result(blobStore.getManifest(imageVersion))
+        }
+
     }
     app.post("/v2/:image/blobs/uploads") { ctx ->
         logger.debug("Got a post to UPLOADS!")
@@ -88,7 +126,6 @@ fun main(args: Array<String>) {
         ctx.result("Created")
     }
     app.put("/v2/:name/manifests/:reference") { ctx ->
-
         val name = ctx.pathParam("name")
         val reference = ctx.pathParam("reference")
         logger.debug("Tackling manifest named $name:$reference!")
@@ -103,6 +140,8 @@ fun main(args: Array<String>) {
         // get digest for this crap...
         val sha = generateSHA256(body)
         val digestString = "sha256:$sha"
+        blobStore.addManifest(ImageVersion(name, reference), Digest(sha), body)
+
         ctx.status(201)
         ctx.header("Location", "http://haha.com")
         ctx.header("Docker-Content-Digest", digestString)
