@@ -25,12 +25,6 @@ fun main(args: Array<String>) {
             logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
         }
     }.start(7000)
-    app.before { ctx ->
-        logger.info("BEFORE: ${ctx.method()} to ${ctx.url()}")
-    }
-    app.after { ctx ->
-        logger.info("AFTER: ${ctx.method()} to ${ctx.url()}")
-    }
     app.get("/") { ctx ->
         logger.debug("Got a request to URL: ${ctx.url()}")
         ctx.result("Hello World")
