@@ -2,11 +2,8 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
 import io.javalin.Javalin
-import org.jdbi.v3.core.Handle
 import org.slf4j.LoggerFactory
-import java.lang.StringBuilder
 import java.security.MessageDigest
-import java.util.*
 
 
 fun generateSHA256(input: String): String {

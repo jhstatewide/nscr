@@ -22,7 +22,7 @@ dependencies {
     implementation("org.jdbi", "jdbi3-core", "3.8.2")
     implementation("org.jdbi", "jdbi3-kotlin", "3.8.2")
     implementation("org.jdbi", "jdbi3-kotlin-sqlobject", "3.8.2")
-
+    api("com.google.code.gson:gson:2.8.5")
 }
 
 tasks.test {
