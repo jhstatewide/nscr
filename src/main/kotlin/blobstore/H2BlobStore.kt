@@ -58,25 +58,46 @@ class H2BlobStore(private val dataDirectory: Path = Path("./data/")): Blobstore 
         }
     }
 
-    override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Int {
-        // TODO: eliminate slurp! use a filterInputStream to count bytes???
-        val content = bodyAsInputStream.readAllBytes()
+    private fun countBytesInStream(stream: InputStream): Long {
+        var count = 0L
+        stream.use {
+            while (it.read() != -1) {
+                count++
+            }
+        }
+        return count
+    }
+
+    override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Long {
+        // we cannot go over the input stream twice...
+        // so we need to copy it to a temp file
+        val tempFile = File.createTempFile("blobstore", "blob")
+        tempFile.deleteOnExit()
+        bodyAsInputStream.use {
+            it.copyTo(tempFile.outputStream())
+            // now log the name of the tempfile
+            logger.info("Uploaded blob to temp file: ${tempFile.absolutePath}")
+        }
+        // get the size of the temp file
+        val size = tempFile.length()
+
+        // log the size of the blob
+        logger.info("Uploading blob of size $size bytes")
+
+        // get an input stream for the file
+        val fileInputStream = tempFile.inputStream()
         jdbi.useTransaction<RuntimeException> { handle ->
             val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
             statement.setString(1, sessionID.id)
             if (blobNumber != null) {
                 statement.setInt(2, blobNumber)
             }
-
-            // bug... need to setBinaryStream...
-            statement.setBinaryStream(3, bodyAsInputStream, content.size.toLong())
-
-            //statement.setBytes(3, content)
+            statement.setBinaryStream(3, fileInputStream, size)
             val result = statement.executeUpdate()
             handle.commit()
             logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
         }
-        return content.size
+        return size
     }
 
     override fun removeBlob(digest: Digest) {

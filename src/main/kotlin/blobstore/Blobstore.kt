@@ -14,7 +14,7 @@ interface Blobstore {
     fun hasBlob(digest: Digest): Boolean
     fun nextSessionLocation(sessionID: SessionID): String
     fun removeBlob(digest: Digest)
-    fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Int
+    fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Long
     fun buildBlob(sessionID: SessionID, digest: Digest)
     fun addManifest(image: ImageVersion, digest: Digest, manifestJson: String)
     fun getManifest(image: ImageVersion): String
