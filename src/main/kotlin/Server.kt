@@ -25,23 +25,28 @@ fun main(args: Array<String>) {
             logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
         }
     }.start(7000)
+
     app.before { ctx ->
         logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
     }
-    app.after("/v2/:name/blobs/:tag") { ctx ->
+
+    app.after("/v2/{name}/blobs/{tag}") { ctx ->
         logger.debug("Closing database handle!")
         // TODO: run later...
         // ctx.attribute<Handle>("handle")?.close()
     }
+
     app.get("/") { ctx ->
         logger.debug("Got a request to URL: ${ctx.url()}")
         ctx.result("Hello World")
     }
+
     app.get("/v2") { ctx ->
         ctx.header("Docker-Distribution-API-Version", "registry/2.0")
         ctx.result("200 OK")
     }
-    app.head("/v2/:image/blobs/:digest") { ctx ->
+
+    app.head("/v2/{image}/blobs/{digest}") { ctx ->
         val image = ctx.pathParam("image")
         val digest = Digest(ctx.pathParam("digest"))
         logger.debug("Checking on $image $digest")
@@ -54,7 +59,8 @@ fun main(args: Array<String>) {
             ctx.result("OK")
         }
     }
-    app.head("/v2/:name/manifests/:tag") { ctx ->
+
+    app.head("/v2/{name}/manifests/{tag}") { ctx ->
         val name = ctx.pathParam("name")
         val tag = ctx.pathParam("tag")
         val imageVersion = ImageVersion(name, tag)
@@ -66,7 +72,8 @@ fun main(args: Array<String>) {
             ctx.status(404)
         }
     }
-    app.get("/v2/:name/manifests/:tag") { ctx ->
+
+    app.get("/v2/{name}/manifests/{tag}") { ctx ->
         val name = ctx.pathParam("name")
         val tagOrDigest = ctx.pathParam("tag")
         val imageVersion = ImageVersion(name, tagOrDigest)
@@ -86,9 +93,9 @@ fun main(args: Array<String>) {
             ctx.contentType(manifestType)
             ctx.result(blobStore.getManifest(imageVersion))
         }
-
     }
-    app.post("/v2/:image/blobs/uploads") { ctx ->
+
+    app.post("/v2/{image}/blobs/uploads") { ctx ->
         logger.debug("Got a post to UPLOADS!")
         // we want to return a session id here...
         val sessionID = sessionTracker.newSession()
@@ -100,7 +107,7 @@ fun main(args: Array<String>) {
         ctx.result("OK")
     }
 
-    app.patch("/v2/uploads/:sessionID/:blobNumber") { ctx ->
+    app.patch("/v2/uploads/{sessionID}/{blobNumber}") { ctx ->
         val sessionID = SessionID(ctx.pathParam("sessionID"))
         val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
         val contentRange = ctx.header("Content-Range")
@@ -117,7 +124,8 @@ fun main(args: Array<String>) {
         ctx.header("Docker-Upload-UUID", sessionID.id)
         ctx.result("Accepted")
     }
-    app.put("/v2/uploads/:sessionID/:blobNumber") { ctx ->
+
+    app.put("/v2/uploads/{sessionID}/{blobNumber}") { ctx ->
         val sessionID = SessionID(ctx.pathParam("sessionID"))
         val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
@@ -129,7 +137,8 @@ fun main(args: Array<String>) {
         ctx.status(201)
         ctx.result("Created")
     }
-    app.put("/v2/:name/manifests/:reference") { ctx ->
+
+    app.put("/v2/{name}/manifests/{reference}") { ctx ->
         val name = ctx.pathParam("name")
         val reference = ctx.pathParam("reference")
         logger.debug("Tackling manifest named $name:$reference!")
@@ -152,6 +161,7 @@ fun main(args: Array<String>) {
         ctx.header("Content-Length", "0")
         ctx.result("Created")
     }
+
     app.get("/api/blobs") { ctx ->
         val blobList = StringBuilder()
         blobStore.eachBlob { blob: String ->
@@ -159,7 +169,8 @@ fun main(args: Array<String>) {
         }
         ctx.result(blobList.toString())
     }
-    app.get("/v2/:name/blobs/:tag") { ctx ->
+
+    app.get("/v2/{name}/blobs/{tag}") { ctx ->
         val name = ctx.pathParam("name")
         val tagOrDigest = ctx.pathParam("tag")
         val imageVersion = ImageVersion(name, tagOrDigest)

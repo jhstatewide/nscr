@@ -56,7 +56,7 @@ class H2BlobStore: Blobstore {
     }
 
     override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Int {
-        // TODO: eliminate slurp! use a filterInputSTream to count bytes???
+        // TODO: eliminate slurp! use a filterInputStream to count bytes???
         val content = bodyAsInputStream.readAllBytes()
         jdbi.useTransaction<RuntimeException> { handle ->
             val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
