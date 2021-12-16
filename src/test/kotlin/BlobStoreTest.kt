@@ -21,12 +21,9 @@ class BlobStoreTest {
     @Test
     fun testBlobStore() {
         val session = SessionID("test")
-        val digest = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
-        blobStore.associateBlobWithSession(session, digest)
-        // now make sure the blob is there
-        blobStore.getBlob(ImageVersion("awesome", "latest")) { inputStream, handle ->
-            val data = inputStream.readBytes()
-            assert(data.contentEquals("test".toByteArray()))
-        }
+        // TODO: start session here somehow...
+        val bytesWritten = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
+        assert(bytesWritten == 4L)
+        // i guess now we just walk all the digests or something???
     }
 }

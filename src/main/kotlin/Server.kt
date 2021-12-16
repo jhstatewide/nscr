@@ -131,9 +131,8 @@ fun main(args: Array<String>) {
         val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
         logger.debug("Got a put request for $sessionID/$blobNumber for $digest!")
         // 201 Created
-        // TODO: we MUST link sessionID to the uploaded blob digest!
         blobStore.associateBlobWithSession(sessionID, digest)
-        ctx.header("Location", "http://hoho.com") // TODO: fix me! Should be able to pull blob from here...
+        ctx.header("Location", "http://localhost") // TODO: fix me! I have no idea why this is here...
         ctx.status(201)
         ctx.result("Created")
     }
@@ -156,7 +155,7 @@ fun main(args: Array<String>) {
         blobStore.addManifest(ImageVersion(name, reference), Digest(sha), body)
 
         ctx.status(201)
-        ctx.header("Location", "http://haha.com")
+        ctx.header("Location", "http://localhost")
         ctx.header("Docker-Content-Digest", digestString)
         ctx.header("Content-Length", "0")
         ctx.result("Created")
