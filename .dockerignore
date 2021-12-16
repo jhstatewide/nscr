@@ -1,0 +1,5 @@
+./data
+./.gradle
+./.idea
+./out
+./test_data

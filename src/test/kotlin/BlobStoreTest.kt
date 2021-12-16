@@ -20,7 +20,9 @@ class BlobStoreTest {
 
     @Test
     fun testBlobStore() {
-        blobStore.addBlob(SessionID("test"), 1, "test".toByteArray().inputStream())
+        val session = SessionID("test")
+        val digest = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
+        blobStore.associateBlobWithSession(session, digest)
         // now make sure the blob is there
         blobStore.getBlob(ImageVersion("awesome", "latest")) { inputStream, handle ->
             val data = inputStream.readBytes()

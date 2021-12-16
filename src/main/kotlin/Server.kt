@@ -132,7 +132,7 @@ fun main(args: Array<String>) {
         logger.debug("Got a put request for $sessionID/$blobNumber for $digest!")
         // 201 Created
         // TODO: we MUST link sessionID to the uploaded blob digest!
-        blobStore.buildBlob(sessionID, digest)
+        blobStore.associateBlobWithSession(sessionID, digest)
         ctx.header("Location", "http://hoho.com") // TODO: fix me! Should be able to pull blob from here...
         ctx.status(201)
         ctx.result("Created")

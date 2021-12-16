@@ -12,7 +12,7 @@ import java.nio.file.Path
 import kotlin.Exception
 import kotlin.io.path.Path
 
-class H2BlobStore(private val dataDirectory: Path = Path("./data/")): Blobstore {
+class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
@@ -58,16 +58,6 @@ class H2BlobStore(private val dataDirectory: Path = Path("./data/")): Blobstore 
         }
     }
 
-    private fun countBytesInStream(stream: InputStream): Long {
-        var count = 0L
-        stream.use {
-            while (it.read() != -1) {
-                count++
-            }
-        }
-        return count
-    }
-
     override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Long {
         // we cannot go over the input stream twice...
         // so we need to copy it to a temp file
@@ -104,7 +94,7 @@ class H2BlobStore(private val dataDirectory: Path = Path("./data/")): Blobstore 
         TODO("Not yet implemented")
     }
 
-    override fun buildBlob(sessionID: SessionID, digest: Digest) {
+    override fun associateBlobWithSession(sessionID: SessionID, digest: Digest) {
         val blobCount = blobCountForSession(sessionID)
         if (blobCount == 1) {
             // we only have a single blob
