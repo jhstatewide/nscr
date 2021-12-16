@@ -24,6 +24,8 @@ dependencies {
     implementation("org.jdbi", "jdbi3-kotlin", "3.8.2")
     implementation("org.jdbi", "jdbi3-kotlin-sqlobject", "3.8.2")
     api("com.google.code.gson:gson:2.8.9")
+    implementation("com.github.docker-java:docker-java-core:3.2.12")
+    implementation("com.github.docker-java:docker-java-transport-httpclient5:3.2.12")
 }
 
 tasks.test {

@@ -2,6 +2,7 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
 import io.javalin.Javalin
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 
@@ -16,15 +17,10 @@ fun generateSHA256(input: String): String {
 val blobStore = H2BlobStore()
 val sessionTracker = SessionTracker()
 
-fun main(args: Array<String>) {
+fun main() {
     // System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
     val logger = LoggerFactory.getLogger("nscr")
-    val app = Javalin.create() { config ->
-        config.enableDevLogging()
-        config.requestLogger { ctx, ms ->
-            logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
-        }
-    }.start(7000)
+    val app = appInstance(logger)
 
     app.before { ctx ->
         logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
@@ -180,3 +176,10 @@ fun main(args: Array<String>) {
         }
     }
 }
+
+fun appInstance(logger: Logger) = Javalin.create() { config ->
+    config.enableDevLogging()
+    config.requestLogger { ctx, ms ->
+        logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
+    }
+}.start(7000)
