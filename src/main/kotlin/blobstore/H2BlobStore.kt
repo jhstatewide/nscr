@@ -5,17 +5,20 @@ import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.io.InputStream
 import java.lang.StringBuilder
+import java.nio.file.Path
 import kotlin.Exception
+import kotlin.io.path.Path
 
-class H2BlobStore: Blobstore {
+class H2BlobStore(private val dataDirectory: Path = Path("./data/")): Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
 
     init {
-        dataSource.setURL("jdbc:h2:./data/blobstore")
+        dataSource.setURL("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
         dataSource.user = "sa"
         dataSource.password = "sa"
         this.jdbi = Jdbi.create(dataSource)
@@ -64,7 +67,11 @@ class H2BlobStore: Blobstore {
             if (blobNumber != null) {
                 statement.setInt(2, blobNumber)
             }
-            statement.setBytes(3, content)
+
+            // bug... need to setBinaryStream...
+            statement.setBinaryStream(3, bodyAsInputStream, content.size.toLong())
+
+            //statement.setBytes(3, content)
             val result = statement.executeUpdate()
             handle.commit()
             logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
@@ -156,7 +163,7 @@ class H2BlobStore: Blobstore {
 
     override fun eachBlob(function: (String) -> StringBuilder) {
         jdbi.useHandle<Exception> { handle ->
-            handle.createQuery("select * from blobs").map { rs, ctx ->
+            handle.createQuery("select * from blobs").map { rs, _ ->
                 rs.getString("digest")
             }.forEach { function(it) }
         }
