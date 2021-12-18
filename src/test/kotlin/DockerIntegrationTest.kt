@@ -7,6 +7,7 @@ import com.github.dockerjava.core.DockerClientConfig
 import com.github.dockerjava.core.DockerClientImpl
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient
 import com.github.dockerjava.transport.DockerHttpClient
+import mu.KotlinLogging
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import java.time.Duration
@@ -44,8 +45,9 @@ class DockerIntegrationTest {
 
         dockerClient.tagImageCmd("ubuntu:20.04", "localhost:7000/ubuntu:20.04", "latest").exec()
 
-        val logger = LoggerFactory.getLogger("nscr-tests")
-        appInstance(logger)
+        val logger = KotlinLogging.logger {  }
+        logger.info { "I am debugging!" }
+        appInstance(logger).start(7000)
 
         val cb2 = ResultCallback.Adapter<PushResponseItem>()
         dockerClient.pushImageCmd("localhost:7000/ubuntu:20.04").exec(cb2).awaitCompletion()

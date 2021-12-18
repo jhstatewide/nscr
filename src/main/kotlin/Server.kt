@@ -2,6 +2,8 @@ import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
 import io.javalin.Javalin
+import mu.KLogger
+import mu.KotlinLogging
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
@@ -18,10 +20,12 @@ val blobStore = H2BlobStore()
 val sessionTracker = SessionTracker()
 
 fun main() {
-    // System.setProperty(org.slf4j.simple.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
-    val logger = LoggerFactory.getLogger("nscr")
+    val logger = KotlinLogging.logger {  }
     val app = appInstance(logger)
+    app.start(7000)
+}
 
+fun bindApp(app: Javalin, logger: KLogger) {
     app.before { ctx ->
         logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
     }
@@ -38,6 +42,7 @@ fun main() {
     }
 
     app.get("/v2") { ctx ->
+        logger.info { "Someone went for /v2" }
         ctx.header("Docker-Distribution-API-Version", "registry/2.0")
         ctx.result("200 OK")
     }
@@ -49,6 +54,7 @@ fun main() {
         if (!blobStore.hasBlob(digest)) {
             logger.debug("We do not have $digest")
             ctx.status(404)
+            ctx.result("Not found")
         } else {
             logger.debug("We DO have $digest")
             ctx.status(200)
@@ -66,6 +72,7 @@ fun main() {
         } else {
             logger.debug("We DO NOT have manifest for $imageVersion!")
             ctx.status(404)
+            ctx.result("Not found")
         }
     }
 
@@ -177,9 +184,13 @@ fun main() {
     }
 }
 
-fun appInstance(logger: Logger) = Javalin.create() { config ->
-    config.enableDevLogging()
-    config.requestLogger { ctx, ms ->
-        logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
+fun appInstance(logger: KLogger): Javalin {
+    val app = Javalin.create() { config ->
+        config.enableDevLogging()
+        config.requestLogger { ctx, ms ->
+            logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
+        }
     }
-}.start(7000)
+    bindApp(app, logger)
+    return app
+}

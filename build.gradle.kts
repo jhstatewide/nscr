@@ -17,8 +17,6 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.2")
     implementation("io.javalin:javalin:4.1.1")
-    implementation("org.slf4j:slf4j-api:1.8.0-beta4")
-    implementation("org.slf4j:slf4j-simple:1.8.0-beta4")
     implementation("com.h2database:h2:2.0.202")
     implementation("org.jdbi", "jdbi3-core", "3.8.2")
     implementation("org.jdbi", "jdbi3-kotlin", "3.8.2")
@@ -26,6 +24,10 @@ dependencies {
     api("com.google.code.gson:gson:2.8.9")
     implementation("com.github.docker-java:docker-java-core:3.2.12")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.2.12")
+    implementation("org.slf4j:slf4j-api:1.7.32")
+    implementation("ch.qos.logback:logback-classic:1.2.8")
+    implementation("ch.qos.logback:logback-core:1.2.8")
+    implementation("io.github.microutils:kotlin-logging-jvm:2.1.20")
 }
 
 tasks.test {
