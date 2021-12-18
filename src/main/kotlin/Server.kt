@@ -4,6 +4,7 @@ import blobstore.ImageVersion
 import io.javalin.Javalin
 import mu.KLogger
 import mu.KotlinLogging
+import org.jdbi.v3.core.Handle
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
@@ -32,8 +33,7 @@ fun bindApp(app: Javalin, logger: KLogger) {
 
     app.after("/v2/{name}/blobs/{tag}") { ctx ->
         logger.debug("Closing database handle!")
-        // TODO: run later...
-        // ctx.attribute<Handle>("handle")?.close()
+        ctx.attribute<Handle>("handle")?.close()
     }
 
     app.get("/") { ctx ->
