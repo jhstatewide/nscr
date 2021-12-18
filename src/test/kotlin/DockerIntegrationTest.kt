@@ -1,4 +1,5 @@
 import blobstore.H2BlobStore
+import blobstore.ImageVersion
 import com.github.dockerjava.api.async.ResultCallback
 import com.github.dockerjava.api.model.Container
 import com.github.dockerjava.api.model.PullResponseItem
@@ -18,7 +19,6 @@ import java.time.Duration
 
 class DockerIntegrationTest {
     companion object {
-
         val testBlobStoreDirectory: Path = Path.of("/tmp/blobstore")
 
         @JvmStatic
@@ -55,11 +55,13 @@ class DockerIntegrationTest {
             println(it.id)
         }
 
+        val hostedTaggedImage = "localhost:7000/ubuntu:20.04"
+
         val cb = ResultCallback.Adapter<PullResponseItem>()
         dockerClient.pullImageCmd("ubuntu:20.04").exec(cb).awaitCompletion()
         cb.awaitCompletion()
 
-        dockerClient.tagImageCmd("ubuntu:20.04", "localhost:7000/ubuntu:20.04", "latest").exec()
+        dockerClient.tagImageCmd("ubuntu:20.04", "localhost:7000/ubuntu", "20.04").exec()
 
         val logger = KotlinLogging.logger {  }
         logger.info { "I am debugging!" }
@@ -70,10 +72,16 @@ class DockerIntegrationTest {
         val numBlobs = blobStore.countBlobs()
 
         val cb2 = ResultCallback.Adapter<PushResponseItem>()
-        dockerClient.pushImageCmd("localhost:7000/ubuntu:20.04").exec(cb2).awaitCompletion()
+        dockerClient.pushImageCmd(hostedTaggedImage).exec(cb2).awaitCompletion()
         cb2.awaitCompletion()
         // expect numBlobs to be greater than it was
         assert(numBlobs < blobStore.countBlobs())
         logger.debug { "numBlobs: $numBlobs. New count: ${blobStore.countBlobs()}" }
+
+        // let's make sure we got a manifest as well...
+        val manifest = blobStore.getManifest(ImageVersion("ubuntu", "20.04"))
+        logger.debug { "manifest: $manifest" }
+        // assert that manifest is not blank
+        assert(manifest.isNotBlank())
     }
 }
