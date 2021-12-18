@@ -1,3 +1,4 @@
+import blobstore.H2BlobStore
 import com.github.dockerjava.api.async.ResultCallback
 import com.github.dockerjava.api.model.Container
 import com.github.dockerjava.api.model.PullResponseItem
@@ -8,12 +9,29 @@ import com.github.dockerjava.core.DockerClientImpl
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient
 import com.github.dockerjava.transport.DockerHttpClient
 import mu.KotlinLogging
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import java.nio.file.Path
 import java.time.Duration
 
 
 class DockerIntegrationTest {
+    companion object {
+
+        val testBlobStoreDirectory: Path = Path.of("/tmp/blobstore")
+
+        @JvmStatic
+        @BeforeAll
+        fun destroyTestBlobstore() {
+            // delete all contents of test blobstore if it exists
+            if (testBlobStoreDirectory.toFile().exists()) {
+                testBlobStoreDirectory.toFile().deleteRecursively()
+            }
+            // recreate the test blobstore
+            testBlobStoreDirectory.toFile().mkdirs()
+        }
+    }
 
     @Test
     fun testDocker() {
@@ -28,8 +46,6 @@ class DockerIntegrationTest {
             .connectionTimeout(Duration.ofSeconds(30))
             .responseTimeout(Duration.ofSeconds(45))
             .build()
-
-
 
         val dockerClient = DockerClientImpl.getInstance(config, httpClient);
         dockerClient.pingCmd().exec()
@@ -47,10 +63,17 @@ class DockerIntegrationTest {
 
         val logger = KotlinLogging.logger {  }
         logger.info { "I am debugging!" }
-        appInstance(logger).start(7000)
+        val blobStore = H2BlobStore(testBlobStoreDirectory)
+        RegistryServerApp(logger, blobStore).start(7000)
+
+        // get number of blobs from blobStore
+        val numBlobs = blobStore.countBlobs()
 
         val cb2 = ResultCallback.Adapter<PushResponseItem>()
         dockerClient.pushImageCmd("localhost:7000/ubuntu:20.04").exec(cb2).awaitCompletion()
         cb2.awaitCompletion()
+        // expect numBlobs to be greater than it was
+        assert(numBlobs < blobStore.countBlobs())
+        logger.debug { "numBlobs: $numBlobs. New count: ${blobStore.countBlobs()}" }
     }
 }

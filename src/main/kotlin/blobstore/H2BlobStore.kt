@@ -189,4 +189,13 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             }.first()
         handler(stream, handle)
     }
+
+    override fun countBlobs(): Long {
+        val handle = jdbi.open()
+        val count = handle.createQuery("select count(*) as count from blobs")
+            .map { rs, _ ->
+                rs.getLong("count")
+            }.first()
+        return count
+    }
 }

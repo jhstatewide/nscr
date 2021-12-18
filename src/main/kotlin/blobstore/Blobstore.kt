@@ -22,4 +22,5 @@ interface Blobstore {
     fun digestForManifest(image: ImageVersion): Digest
     fun eachBlob(function: (String) -> StringBuilder)
     fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit)
+    fun countBlobs(): Long
 }
