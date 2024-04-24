@@ -75,10 +75,10 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
             if(blobStore.hasManifest(imageVersion)) {
-                logger.debug("We DO have manifest for $imageVersion!")
+                logger.debug("We DO have manifest for {}!", imageVersion)
                 ctx.status(200)
             } else {
-                logger.debug("We DO NOT have manifest for $imageVersion!")
+                logger.debug("We DO NOT have manifest for {}!", imageVersion)
                 ctx.status(404)
                 ctx.result("Not found")
             }
@@ -91,14 +91,14 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
             if (imageVersion.tag.startsWith("sha256:")) {
                 // by digest
-                logger.debug("Want to look up digest for $imageVersion!")
+                logger.debug("Want to look up digest for {}!", imageVersion)
                 ctx.status(200)
                 ctx.header("Docker-Content-Digest", imageVersion.tag)
                 ctx.contentType(manifestType)
                 ctx.result(blobStore.getManifest(imageVersion))
             } else {
                 val digest = blobStore.digestForManifest(imageVersion)
-                logger.debug("Digest for manifest $imageVersion is $digest")
+                logger.debug("Digest for manifest {} is {}", imageVersion, digest)
                 ctx.status(200)
                 ctx.header("Docker-Content-Digest", digest.digestString)
                 ctx.contentType(manifestType)

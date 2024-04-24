@@ -6,7 +6,8 @@ import org.jdbi.v3.sqlobject.Handler
 import java.io.InputStream
 import java.lang.StringBuilder
 
-inline class Digest(val digestString: String)
+@JvmInline
+value class Digest(val digestString: String)
 
 data class ImageVersion(val name: String, val tag: String)
 
