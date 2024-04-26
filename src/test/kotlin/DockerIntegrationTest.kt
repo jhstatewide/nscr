@@ -12,7 +12,6 @@ import com.github.dockerjava.transport.DockerHttpClient
 import mu.KotlinLogging
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.time.Duration
 

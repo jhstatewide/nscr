@@ -6,8 +6,6 @@ import io.javalin.Javalin
 import mu.KLogger
 import mu.KotlinLogging
 import org.jdbi.v3.core.Handle
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 
 fun main() {
@@ -19,12 +17,9 @@ fun main() {
 class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
     val blobStore = blobstore
     val sessionTracker = SessionTracker()
-    val app = Javalin.create { config ->
-        config.enableDevLogging()
-        config.requestLogger { ctx, ms ->
-            logger.info("CTX: ${ctx.method()} ${ctx.fullUrl()}")
-        }
-    }
+    val app: Javalin = Javalin.create { config ->
+
+    } ?: throw Error("Could not create Javalin app!")
 
     init {
         bindApp(app, logger)
@@ -32,6 +27,10 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
 
     fun start(port: Int) {
         app.start(port)
+    }
+
+    fun javalinApp(): Javalin {
+        return app
     }
 
     private fun bindApp(app: Javalin, logger: KLogger) {
@@ -125,7 +124,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val contentLength = ctx.header("Content-Length")?.toIntOrNull()
             logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
-            val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyAsInputStream())
+            val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
 
             ctx.status(202)
             // we have to give a location to upload to next...
@@ -196,6 +195,6 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
         val bytes = input.toByteArray()
         val md = MessageDigest.getInstance("SHA-256")
         val digest = md.digest(bytes)
-        return digest.fold("", { str, it -> str + "%02x".format(it) })
+        return digest.fold("") { str, it -> str + "%02x".format(it) }
     }
 }

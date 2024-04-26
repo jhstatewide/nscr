@@ -16,7 +16,9 @@ dependencies {
     testImplementation(kotlin("test-junit5"))
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.2")
-    implementation("io.javalin:javalin:4.1.1")
+    implementation("io.javalin:javalin:6.1.3")
+    // get the javalin test tools as well
+    testImplementation("io.javalin:javalin-testtools:6.1.3")
     implementation("com.h2database:h2:2.2.222")
     implementation("org.jdbi", "jdbi3-core", "3.8.2")
     implementation("org.jdbi", "jdbi3-kotlin", "3.8.2")
@@ -28,6 +30,8 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.4.14")
     implementation("ch.qos.logback:logback-core:1.3.12")
     implementation("io.github.microutils:kotlin-logging-jvm:2.1.20")
+    // pull in mockk
+    testImplementation("io.mockk:mockk:1.12.0")
 }
 
 tasks.test {

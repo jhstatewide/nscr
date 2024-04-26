@@ -1,3 +1,4 @@
+import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
 import org.junit.jupiter.api.BeforeEach
@@ -25,5 +26,8 @@ class BlobStoreTest {
         val bytesWritten = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
         assert(bytesWritten == 4L)
         // i guess now we just walk all the digests or something???
+        // let's test that the blob is there
+        val hasBlob = blobStore.hasBlob(Digest("test"))
+        assert(hasBlob)
     }
 }
