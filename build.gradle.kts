@@ -31,11 +31,16 @@ dependencies {
     implementation("ch.qos.logback:logback-core:1.3.12")
     implementation("io.github.microutils:kotlin-logging-jvm:2.1.20")
     // pull in mockk
-    testImplementation("io.mockk:mockk:1.12.0")
+    testImplementation("io.mockk:mockk:1.13.10")
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.withType<JavaCompile> {
+    sourceCompatibility = "17"
+    targetCompatibility = "17"
 }
 
 tasks.withType<KotlinCompile>() {
