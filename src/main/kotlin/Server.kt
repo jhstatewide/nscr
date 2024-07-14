@@ -57,7 +57,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
         app.head("/v2/{image}/blobs/{digest}") { ctx ->
             val image = ctx.pathParam("image")
             val digest = Digest(ctx.pathParam("digest"))
-            logger.debug("Checking on $image $digest")
+            logger.info("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
             if (!blobStore.hasBlob(digest)) {
                 logger.debug("We do not have $digest")
                 ctx.status(404)
@@ -73,6 +73,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val name = ctx.pathParam("name")
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
+            logger.info { "Checking on manifest for $imageVersion" }
             if(blobStore.hasManifest(imageVersion)) {
                 logger.debug("We DO have manifest for {}!", imageVersion)
                 ctx.status(200)
@@ -107,9 +108,29 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
 
         app.post("/v2/{image}/blobs/uploads") { ctx ->
             logger.debug("Got a post to UPLOADS!")
+            // see if we have the query param 'digest',
+            // as in /v2/test/blobs/uploads?digest=sha256:1234
+            val digest = ctx.queryParam("digest")
+            if (digest != null) {
+                logger.debug("Got a digest: $digest")
+                if (blobStore.hasBlob(Digest(digest))) {
+                    logger.debug("We already have this blob!")
+                    ctx.status(201)
+                    ctx.header("Location", "http://localhost")
+                    ctx.result("Created")
+                    return@post
+                }
+            }
+
             // we want to return a session id here...
             val sessionID = sessionTracker.newSession()
             val newLocation = "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}"
+
+            if (digest != null) {
+                logger.debug("Associating $digest with $sessionID")
+                blobStore.associateBlobWithSession(sessionID, Digest(digest))
+            }
+
             logger.info("Telling the uploader to go to $newLocation")
             ctx.header("Location", newLocation)
             ctx.header("Docker-Upload-UUID", sessionID.id)
@@ -150,7 +171,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
         app.put("/v2/{name}/manifests/{reference}") { ctx ->
             val name = ctx.pathParam("name")
             val reference = ctx.pathParam("reference")
-            logger.debug("Tackling manifest named $name:$reference!")
+            logger.info("Tackling manifest named $name:$reference!")
 
             val contentType = ctx.header("Content-Type")
             val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
