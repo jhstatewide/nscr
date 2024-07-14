@@ -65,32 +65,38 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         // we cannot go over the input stream twice...
         // so we need to copy it to a temp file
         val tempFile = File.createTempFile("blobstore", "blob")
-        tempFile.deleteOnExit()
-        bodyAsInputStream.use {
-            it.copyTo(tempFile.outputStream())
-            // now log the name of the tempfile
-            logger.info("Uploaded blob to temp file: ${tempFile.absolutePath}")
-        }
-        // get the size of the temp file
-        val size = tempFile.length()
-
-        // log the size of the blob
-        logger.info("Uploading blob of size $size bytes")
-
-        // get an input stream for the file
-        val fileInputStream = tempFile.inputStream()
-        jdbi.useTransaction<RuntimeException> { handle ->
-            val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
-            statement.setString(1, sessionID.id)
-            if (blobNumber != null) {
-                statement.setInt(2, blobNumber)
+        try {
+            bodyAsInputStream.use {
+                it.copyTo(tempFile.outputStream())
+                // now log the name of the tempfile
+                logger.info("Uploaded blob to temp file: ${tempFile.absolutePath}")
             }
-            statement.setBinaryStream(3, fileInputStream, size)
-            val result = statement.executeUpdate()
-            handle.commit()
-            logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
+            // get the size of the temp file
+            val size = tempFile.length()
+
+            // log the size of the blob
+            logger.info("Uploading blob of size $size bytes")
+
+            // get an input stream for the file
+            val fileInputStream = tempFile.inputStream()
+            jdbi.useTransaction<RuntimeException> { handle ->
+                val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
+                statement.setString(1, sessionID.id)
+                if (blobNumber != null) {
+                    statement.setInt(2, blobNumber)
+                }
+                statement.setBinaryStream(3, fileInputStream, size)
+                val result = statement.executeUpdate()
+                handle.commit()
+                logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
+            }
+            return size
+        } finally {
+            if (tempFile.exists()) {
+                logger.info("Deleting temp file: ${tempFile.absolutePath}")
+                tempFile.delete()
+            }
         }
-        return size
     }
 
     override fun removeBlob(digest: Digest) {
