@@ -24,6 +24,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         provisionTables()
     }
 
+    @Throws(Exception::class)
     private fun provisionTables() {
         jdbi.useTransaction<RuntimeException> { handle: Handle ->
             handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
@@ -42,11 +43,13 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         return sessionID.id + "/" + sessionBlobCount
     }
 
+    @Throws(Exception::class)
     private fun blobCountForSession(sessionID: SessionID): Int = jdbi.withHandle<Int, Exception> { handle ->
         handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID")
             .bind("sessionID", sessionID.id).map { rs, _ -> rs.getInt("blobCount") }.first() ?: 0
     }
 
+    @Throws(Exception::class)
     override fun hasBlob(digest: Digest): Boolean {
         val query = "SELECT COUNT(*) as matching_blob_count FROM blobs where digest = :digest;"
         return jdbi.withHandle<Boolean, Exception> { handle ->
@@ -57,6 +60,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         }
     }
 
+    @Throws(Exception::class)
     override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Long {
         // we cannot go over the input stream twice...
         // so we need to copy it to a temp file
@@ -93,6 +97,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         TODO("Not yet implemented")
     }
 
+    @Throws(Exception::class)
     override fun associateBlobWithSession(sessionID: SessionID, digest: Digest) {
         val blobCount = blobCountForSession(sessionID)
         if (blobCount == 1) {
@@ -108,12 +113,19 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         }
     }
 
+    @Throws(Exception::class)
     override fun addManifest(image: ImageVersion, digest: Digest, manifestJson: String) {
         jdbi.useTransaction<Exception> { handle ->
-            handle.createUpdate("DELETE FROM MANIFESTS WHERE name = :name and tag = :tag")
-                .bind("name", image.name)
-                .bind("tag", image.tag)
-                .execute()
+            // see if the manifest already exists
+            if (hasManifest(image)) {
+                logger.info("Manifest already exists for $image, updating...")
+                handle.createUpdate("DELETE FROM MANIFESTS WHERE name = :name and tag = :tag")
+                    .bind("name", image.name)
+                    .bind("tag", image.tag)
+                    .execute()
+            } else {
+                logger.info("Manifest does not exist for $image, inserting...")
+            }
             handle.createUpdate("INSERT INTO MANIFESTS (name, tag, manifest, digest) values (:name, :tag, :manifest, :digest);")
                 .bind("name", image.name)
                 .bind("tag", image.tag)
@@ -125,6 +137,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         }
     }
 
+    @Throws(Exception::class)
     override fun getManifest(image: ImageVersion): String {
         return jdbi.withHandle<String?, Exception> { handle ->
             if (image.tag.startsWith("sha256:")) {
@@ -148,6 +161,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         } ?: error("Cannot find manifest for $image!")
     }
 
+    @Throws(Exception::class)
     override fun hasManifest(image: ImageVersion): Boolean {
         return jdbi.withHandle<Int, Exception> { handle ->
             handle.createQuery("SELECT count(*) as count from manifests where name = :name and tag = :tag")
@@ -159,6 +173,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         } > 0
     }
 
+    @kotlin.jvm.Throws(Exception::class)
     override fun digestForManifest(image: ImageVersion): Digest {
         return jdbi.withHandle<Digest?, Exception> { handle ->
             val query = "select digest from manifests where name = :name and tag = :tag;"
@@ -171,6 +186,7 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         } ?: error("Cannot find manifest for $image!")
     }
 
+    @Throws(Exception::class)
     override fun eachBlob(function: (BlobRow) -> Unit) {
         jdbi.useHandle<Exception> { handle ->
             handle.createQuery("SELECT * FROM BLOBS").map { rs, _ ->

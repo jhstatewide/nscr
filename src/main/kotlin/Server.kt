@@ -49,7 +49,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
         }
 
         app.get("/v2") { ctx ->
-            logger.info { "Someone went for /v2" }
+            logger.info { "Access GET /v2" }
             ctx.header("Docker-Distribution-API-Version", "registry/2.0")
             ctx.result("200 OK")
         }
