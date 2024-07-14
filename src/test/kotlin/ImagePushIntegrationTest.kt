@@ -1,5 +1,4 @@
 import blobstore.Blobstore
-import com.google.common.base.CharMatcher.any
 import io.javalin.testtools.JavalinTest
 import io.mockk.every
 import io.mockk.mockk
@@ -10,7 +9,7 @@ import kotlin.test.assertEquals
 class ImagePushIntegrationTest {
 
     val klogger = KotlinLogging.logger {}
-    val mockBlobStore = mockk<Blobstore>()
+    val mockBlobStore = mockk<Blobstore>(relaxed = true)
 
     init {
         every { mockBlobStore.addBlob(any(), any(), any()) } returns 202
@@ -20,7 +19,7 @@ class ImagePushIntegrationTest {
 
     @Test
     fun testHelloWorld() {
-        JavalinTest.test(javalinApp) { server, client ->
+        JavalinTest.test(javalinApp) { _, client ->
             val response = client.get("/")
             assertEquals("Hello World", response.body?.string())
         }
@@ -28,7 +27,7 @@ class ImagePushIntegrationTest {
 
     @Test
     fun testImagePush() {
-        JavalinTest.test(javalinApp) { server, client ->
+        JavalinTest.test(javalinApp) { _, client ->
             val response = client.post("/v2/test/blobs/uploads/")
             assertEquals(202, response.code)
         }

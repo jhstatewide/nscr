@@ -1,6 +1,5 @@
 import blobstore.Digest
 import blobstore.H2BlobStore
-import blobstore.ImageVersion
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -25,9 +24,20 @@ class BlobStoreTest {
         // TODO: start session here somehow...
         val bytesWritten = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
         assert(bytesWritten == 4L)
-        // i guess now we just walk all the digests or something???
-        // let's test that the blob is there
-        val hasBlob = blobStore.hasBlob(Digest("test"))
-        assert(hasBlob)
+
+        // this test fails, so before it gets to the part that fails below, let's implement
+        // eachBlob, which will be a function that takes a lambda and calls it with each blob
+        // in the store
+        var row1Found = false
+
+        blobStore.eachBlob { blobRow ->
+            println("BlobRow: $blobRow")
+            println("Number: ${blobRow.blobNumber}")
+            if (blobRow.blobNumber == 1) {
+                row1Found = true
+            }
+        }
+
+        assert(row1Found)
     }
 }

@@ -7,7 +7,6 @@ import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.InputStream
-import java.lang.StringBuilder
 import java.nio.file.Path
 import kotlin.Exception
 import kotlin.io.path.Path
@@ -172,10 +171,10 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         } ?: error("Cannot find manifest for $image!")
     }
 
-    override fun eachBlob(function: (String) -> StringBuilder) {
+    override fun eachBlob(function: (BlobRow) -> Unit) {
         jdbi.useHandle<Exception> { handle ->
-            handle.createQuery("select * from blobs").map { rs, _ ->
-                rs.getString("digest")
+            handle.createQuery("SELECT * FROM BLOBS").map { rs, _ ->
+                BlobRow.fromResultSet(rs)
             }.forEach { function(it) }
         }
     }

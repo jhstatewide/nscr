@@ -173,8 +173,9 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
 
         app.get("/api/blobs") { ctx ->
             val blobList = StringBuilder()
-            blobStore.eachBlob { blob: String ->
-                blobList.append(blob + "\n")
+            blobStore.eachBlob { blobRow ->
+                blobList.append(blobRow.digest)
+                blobList.append("\n")
             }
             ctx.result(blobList.toString())
         }
