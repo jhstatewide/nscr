@@ -1,6 +1,40 @@
+# Gradle
 build/
 .gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# IDE
 .idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary files
+*.tmp
+*.swp
+*~
+*.bak
+
+# Project specific
 /data
 /test_data
 bin/
+
+# JVM
+hs_err_pid*
