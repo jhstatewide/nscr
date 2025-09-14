@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     kotlin("jvm") version "1.9.23"
     idea
+    application
 }
 
 group = "com.statewidesoftware"
@@ -57,4 +58,8 @@ idea {
 val compileKotlin: KotlinCompile by tasks
 compileKotlin.kotlinOptions {
     freeCompilerArgs = listOf("-Xinline-classes")
+}
+
+application {
+    mainClass.set("ServerKt")
 }
