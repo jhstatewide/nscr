@@ -34,6 +34,8 @@ class RegistryWebInterface {
   private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
   private reconnectTimeout: number | null = null;
   private isManualDisconnect = false;
+  private statusRefreshInterval: number | null = null;
+  private currentStats: RegistryStats | null = null;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -54,6 +56,10 @@ class RegistryWebInterface {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+    }
+    if (this.statusRefreshInterval) {
+      clearInterval(this.statusRefreshInterval);
+      this.statusRefreshInterval = null;
     }
   }
 
@@ -186,6 +192,7 @@ class RegistryWebInterface {
     this.loadDashboard();
     this.loadRepositories();
     this.loadLogs();
+    this.startStatusRefresh();
 
     // Setup logout if authenticated
     if (this.isAuthenticated) {
@@ -212,6 +219,7 @@ class RegistryWebInterface {
       if (!response.ok) throw new Error('Failed to load status');
       
       const stats: RegistryStats = await response.json();
+      this.currentStats = stats;
       this.renderDashboard(stats);
     } catch (error) {
       container.innerHTML = `
@@ -220,6 +228,28 @@ class RegistryWebInterface {
           <p>Failed to load registry status: ${error}</p>
         </div>
       `;
+    }
+  }
+
+  private startStatusRefresh() {
+    // Refresh status every 5 seconds
+    this.statusRefreshInterval = window.setInterval(() => {
+      this.refreshDashboard();
+    }, 5000);
+  }
+
+  private async refreshDashboard() {
+    try {
+      const response = await fetch('/api/web/status');
+      if (!response.ok) return;
+      
+      const newStats: RegistryStats = await response.json();
+      if (this.currentStats) {
+        this.updateDashboardNumbers(this.currentStats, newStats);
+      }
+      this.currentStats = newStats;
+    } catch (error) {
+      console.error('Failed to refresh dashboard:', error);
     }
   }
 
@@ -239,7 +269,7 @@ class RegistryWebInterface {
           <div class="card text-white bg-primary">
             <div class="card-body">
               <h5 class="card-title">Repositories</h5>
-              <h2 class="card-text">${stats.repositories}</h2>
+              <h2 class="card-text" id="stat-repositories">${stats.repositories}</h2>
             </div>
           </div>
         </div>
@@ -247,7 +277,7 @@ class RegistryWebInterface {
           <div class="card text-white bg-success">
             <div class="card-body">
               <h5 class="card-title">Total Blobs</h5>
-              <h2 class="card-text">${stats.totalBlobs}</h2>
+              <h2 class="card-text" id="stat-total-blobs">${stats.totalBlobs}</h2>
             </div>
           </div>
         </div>
@@ -255,7 +285,7 @@ class RegistryWebInterface {
           <div class="card text-white bg-info">
           <div class="card-body">
               <h5 class="card-title">Total Manifests</h5>
-              <h2 class="card-text">${stats.totalManifests}</h2>
+              <h2 class="card-text" id="stat-total-manifests">${stats.totalManifests}</h2>
             </div>
           </div>
         </div>
@@ -263,7 +293,7 @@ class RegistryWebInterface {
           <div class="card text-white bg-warning">
             <div class="card-body">
               <h5 class="card-title">Unreferenced Blobs</h5>
-              <h2 class="card-text">${stats.unreferencedBlobs}</h2>
+              <h2 class="card-text" id="stat-unreferenced-blobs">${stats.unreferencedBlobs}</h2>
             </div>
           </div>
         </div>
@@ -276,8 +306,8 @@ class RegistryWebInterface {
               <h5 class="mb-0">Storage Information</h5>
             </div>
             <div class="card-body">
-              <p><strong>Estimated Space to Free:</strong> ${this.formatBytes(stats.estimatedSpaceToFree)}</p>
-              ${stats.lastGcRun ? `<p><strong>Last GC Run:</strong> ${new Date(stats.lastGcRun).toLocaleString()}</p>` : ''}
+              <p><strong>Estimated Space to Free:</strong> <span data-storage-space>${this.formatBytes(stats.estimatedSpaceToFree)}</span></p>
+              ${stats.lastGcRun ? `<p><strong>Last GC Run:</strong> <span data-last-gc>${new Date(stats.lastGcRun).toLocaleString()}</span></p>` : ''}
             </div>
           </div>
         </div>
@@ -574,6 +604,68 @@ class RegistryWebInterface {
         countSpan.textContent = `${count} entries`;
         countSpan.className = count > 0 ? 'text-info' : 'text-muted';
       }
+    }
+  }
+
+  private updateDashboardNumbers(oldStats: RegistryStats, newStats: RegistryStats) {
+    // Update repositories count
+    this.animateNumberChange('stat-repositories', oldStats.repositories, newStats.repositories);
+    
+    // Update total blobs count
+    this.animateNumberChange('stat-total-blobs', oldStats.totalBlobs, newStats.totalBlobs);
+    
+    // Update total manifests count
+    this.animateNumberChange('stat-total-manifests', oldStats.totalManifests, newStats.totalManifests);
+    
+    // Update unreferenced blobs count
+    this.animateNumberChange('stat-unreferenced-blobs', oldStats.unreferencedBlobs, newStats.unreferencedBlobs);
+    
+    // Update storage information
+    this.updateStorageInfo(newStats);
+  }
+
+  private animateNumberChange(elementId: string, oldValue: number, newValue: number) {
+    const element = document.getElementById(elementId);
+    if (!element || oldValue === newValue) return;
+
+    // Add transition class for smooth animation
+    element.classList.add('number-transition');
+    
+    // Animate the number change
+    const duration = 500; // 500ms animation
+    const startTime = Date.now();
+    const startValue = oldValue;
+    const endValue = newValue;
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Use easing function for smooth animation
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      const currentValue = Math.round(startValue + (endValue - startValue) * easeOutQuart);
+      
+      element.textContent = currentValue.toString();
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        element.classList.remove('number-transition');
+      }
+    };
+    
+    requestAnimationFrame(animate);
+  }
+
+  private updateStorageInfo(stats: RegistryStats) {
+    const spaceElement = document.querySelector('[data-storage-space]');
+    if (spaceElement) {
+      spaceElement.textContent = this.formatBytes(stats.estimatedSpaceToFree);
+    }
+    
+    const gcElement = document.querySelector('[data-last-gc]');
+    if (gcElement && stats.lastGcRun) {
+      gcElement.textContent = new Date(stats.lastGcRun).toLocaleString();
     }
   }
 
