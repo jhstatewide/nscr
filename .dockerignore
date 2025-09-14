@@ -1,5 +1,33 @@
-./data
-./.gradle
-./.idea
-./out
-./test_data
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts
+build/
+.gradle/
+bin/
+
+# Documentation
+README.md
+scripts/
+
+# Test data
+test_data/
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~

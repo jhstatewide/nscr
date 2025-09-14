@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  nscr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: nscr-registry
+    ports:
+      - "7000:7000"
+    volumes:
+      # Simple named volume for persistent data
+      - nscr_data:/app/data
+    environment:
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    restart: unless-stopped
+
+volumes:
+  nscr_data:

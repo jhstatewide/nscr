@@ -31,6 +31,9 @@ pids
 *~
 *.bak
 
+# JAR extraction artifacts
+META-INF/
+
 # Project specific
 /data
 /test_data

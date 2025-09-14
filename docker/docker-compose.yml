@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  nscr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: nscr-registry
+    ports:
+      - "7000:7000"
+    volumes:
+      # Persistent data storage
+      - nscr_data:/app/data
+      # Optional: Mount custom logback configuration
+      # - ./logback.xml:/app/logback.xml:ro
+    environment:
+      # Optional: Configure JVM settings
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/v2"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  nscr_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
