@@ -118,13 +118,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             bodyAsInputStream.use {
                 it.copyTo(tempFile.outputStream())
                 // now log the name of the tempfile
-                logger.info("Uploaded blob to temp file: ${tempFile.absolutePath}")
+                logger.debug("Uploaded blob to temp file: ${tempFile.absolutePath}")
             }
             // get the size of the temp file
             val size = tempFile.length()
 
             // log the size of the blob
-            logger.info("Uploading blob of size $size bytes")
+            logger.debug("Uploading blob of size $size bytes")
 
             // get an input stream for the file
             tempFile.inputStream().use { fileInputStream ->
@@ -137,13 +137,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     statement.setBinaryStream(3, fileInputStream, size)
                     val result = statement.executeUpdate()
                     handle.commit()
-                    logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
+                    logger.debug("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
                 }
             }
             return size
         } finally {
             if (tempFile.exists()) {
-                logger.info("Deleting temp file: ${tempFile.absolutePath}")
+                logger.debug("Deleting temp file: ${tempFile.absolutePath}")
                 tempFile.delete()
             }
         }
@@ -205,7 +205,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         handle.createUpdate(query).bind(0, digest.digestString)
                             .bind(1, sessionID.id).execute()
                         
-                        logger.info("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
+                        logger.debug("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
                     } finally {
                         if (tempFile.exists()) {
                             tempFile.delete()
@@ -224,7 +224,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             }
         } else {
             // Handle multi-part uploads by stitching chunks together
-            logger.info("Stitching $blobCount blob chunks for session ${sessionID.id}")
+            logger.debug("Stitching $blobCount blob chunks for session ${sessionID.id}")
             stitchMultiPartBlob(sessionID, digest)
         }
     }
@@ -259,7 +259,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
 
                 // Calculate total size
                 val totalSize = blobChunks.sumOf { it.second.size }
-                logger.info("Stitching ${blobChunks.size} chunks totaling $totalSize bytes for session ${sessionID.id}")
+                logger.debug("Stitching ${blobChunks.size} chunks totaling $totalSize bytes for session ${sessionID.id}")
 
                 // Create a temporary file to hold the stitched blob
                 val tempFile = File.createTempFile("stitched_blob", "tmp")
@@ -290,7 +290,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
                     }
                     
-                    logger.info("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
+                    logger.debug("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
 
                     // Read the stitched blob and insert it as a new blob with the digest
                     tempFile.inputStream().use { stitchedInputStream ->
@@ -311,7 +311,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     deleteStatement.setString(1, sessionID.id)
                     val deletedChunks = deleteStatement.executeUpdate()
 
-                    logger.info("Successfully stitched $deletedChunks chunks into final blob with digest ${digest.digestString}")
+                    logger.debug("Successfully stitched $deletedChunks chunks into final blob with digest ${digest.digestString}")
                     handle.commit()
 
                 } finally {
@@ -336,13 +336,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             try {
                 // see if the manifest already exists
                 if (hasManifest(image)) {
-                    logger.info("Manifest already exists for $image, updating...")
+                    logger.debug("Manifest already exists for $image, updating...")
                     handle.createUpdate("DELETE FROM MANIFESTS WHERE name = :name and tag = :tag")
                         .bind("name", image.name)
                         .bind("tag", image.tag)
                         .execute()
                 } else {
-                    logger.info("Manifest does not exist for $image, inserting...")
+                    logger.debug("Manifest does not exist for $image, inserting...")
                 }
                 handle.createUpdate("INSERT INTO MANIFESTS (name, tag, manifest, digest) values (:name, :tag, :manifest, :digest);")
                     .bind("name", image.name)
@@ -350,7 +350,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("manifest", manifestJson)
                     .bind("digest", "sha256:${digest.digestString}")
                     .execute()
-                logger.info("Manifest added for $image with digest: sha256:${digest.digestString}")
+                logger.debug("Manifest added for $image with digest: sha256:${digest.digestString}")
                 handle.commit()
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in addManifest for $image: ${e.message}", e)

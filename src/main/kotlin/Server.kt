@@ -8,8 +8,45 @@ import mu.KotlinLogging
 import nscr.Config
 import org.jdbi.v3.core.Handle
 import java.security.MessageDigest
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+
+/**
+ * Configure logging levels based on environment configuration
+ */
+fun configureLogging() {
+    val logLevel = Config.LOG_LEVEL.uppercase()
+    val level = when (logLevel) {
+        "TRACE" -> Level.TRACE
+        "DEBUG" -> Level.DEBUG
+        "INFO" -> Level.INFO
+        "WARN" -> Level.WARN
+        "ERROR" -> Level.ERROR
+        else -> Level.INFO
+    }
+    
+    // Set root logger level
+    val rootLogger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
+    rootLogger.level = level
+    
+    // Set specific logger levels for noisy components
+    val blobStoreLogger = LoggerFactory.getLogger("blobstore.H2BlobStore") as Logger
+    when (logLevel) {
+        "TRACE", "DEBUG" -> blobStoreLogger.level = level
+        "INFO" -> blobStoreLogger.level = Level.WARN  // Reduce blob store noise at INFO level
+        "WARN", "ERROR" -> blobStoreLogger.level = level
+    }
+    
+    // Set Javalin to be less verbose
+    val javalinLogger = LoggerFactory.getLogger("io.javalin") as Logger
+    javalinLogger.level = Level.WARN
+}
 
 fun main() {
+    // Configure logging level from environment
+    configureLogging()
+    
     val logger = KotlinLogging.logger {  }
     
     // Validate configuration before starting
@@ -31,7 +68,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     val blobStore = blobstore
     val sessionTracker = SessionTracker()
     val app: Javalin = Javalin.create { config ->
-
+        config.showJavalinBanner = false
     } ?: throw Error("Could not create Javalin app!")
 
     init {
@@ -94,7 +131,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         app.head("/v2/{image}/blobs/{digest}") { ctx ->
             val image = ctx.pathParam("image")
             val digest = Digest(ctx.pathParam("digest"))
-            logger.info("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
+            logger.debug("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
             handleBlobExistenceCheck(ctx, digest, logger)
         }
 
@@ -102,7 +139,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val name = ctx.pathParam("name")
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
-            logger.info { "Checking on manifest for $imageVersion" }
+            logger.debug { "Checking on manifest for $imageVersion" }
             handleManifestExistenceCheck(ctx, imageVersion, logger)
         }
 
@@ -160,7 +197,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 blobStore.associateBlobWithSession(sessionID, Digest(digest))
             }
 
-            logger.info("Telling the uploader to go to $newLocation")
+            logger.debug("Telling the uploader to go to $newLocation")
             ctx.header("Location", newLocation)
             ctx.header("Docker-Upload-UUID", sessionID.id)
             ctx.status(202)
@@ -172,7 +209,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val contentRange = ctx.header("Content-Range")
             val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-            logger.info("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
+            logger.debug("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
 
             val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
 
@@ -200,7 +237,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         app.put("/v2/{name}/manifests/{reference}") { ctx ->
             val name = ctx.pathParam("name")
             val reference = ctx.pathParam("reference")
-            logger.info("Tackling manifest named $name:$reference!")
+            logger.debug("Tackling manifest named $name:$reference!")
 
             val contentType = ctx.header("Content-Type")
             val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
@@ -208,7 +245,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 error("Mime type blooper! You must upload manifest of type: $manifestType instead of $contentType!")
             }
             val body = ctx.body()
-            logger.info("Uploaded manifest is: $body")
+            logger.debug("Uploaded manifest is: $body")
             // get digest for this crap...
             val sha = generateSHA256(body)
             val digestString = "sha256:$sha"
