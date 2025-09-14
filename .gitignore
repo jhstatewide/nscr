@@ -45,4 +45,12 @@ docker/data/
 # JVM
 hs_err_pid*
 .aider*
+
+# Frontend build artifacts
+frontend/dist/
+
+# IDE and editor files
+.cursor/
+
+# Static resources (built from frontend)
 src/main/resources/static/

@@ -7,14 +7,15 @@ import com.statewidesoftware.nscr.blobstore.ImageVersion
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.staticfiles.Location
+import io.javalin.http.sse.SseClient
 import mu.KLogger
 import mu.KotlinLogging
 import java.security.MessageDigest
 import java.io.File
+import java.util.concurrent.ConcurrentLinkedQueue
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
-
 
 /**
  * Web interface authentication helper function
@@ -156,11 +157,31 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 staticFiles.directory = "/static"
                 staticFiles.location = Location.CLASSPATH
             }
+            
         }
+        
     } ?: throw Error("Could not create Javalin app!")
 
     init {
         bindApp(app, logger)
+        
+        // SSE endpoints
+        app.sse("/api/logs/stream") { client ->
+            try {
+                SseLogAppender.addClient(client)
+                client.sendEvent("connected", "Log stream started")
+                
+                // Keep the connection alive by not returning from this block
+                // The connection will stay open until the client disconnects
+                try {
+                    Thread.sleep(Long.MAX_VALUE) // Sleep indefinitely
+                } catch (e: InterruptedException) {
+                    // Connection closed
+                }
+            } catch (e: Exception) {
+                logger.error { "Error in SSE connection: ${e.message}" }
+            }
+        }
         
         // Start cleanup task if blobstore supports it
         if (blobStore is H2BlobStore) {
@@ -504,11 +525,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "totalManifests" to stats.totalManifests,
                     "unreferencedBlobs" to stats.unreferencedBlobs,
                     "estimatedSpaceToFree" to stats.estimatedSpaceToFree,
-                    "lastGcRun" to "2024-01-01T00:00:00Z" // You'd track this in production
+                    "lastGcRun" to "2024-01-01T00:00:00Z", // You'd track this in production
+                    "logStreamClients" to SseLogAppender.getClientCount()
                 )
                 
                 ctx.json(response)
             }
+            
         }
 
     }

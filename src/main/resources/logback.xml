@@ -1,18 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <!-- encoders are assigned the type
-             ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
+    <!-- Console appender for standard output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-
-    <!-- set the log level higher for ServerKt -->
-    <logger name="ServerKt" level="DEBUG"/>
-    <logger name="DockerIntegrationTest" level="DEBUG"/>
-
-    <root level="info">
-        <appender-ref ref="STDOUT" />
+    
+    <!-- SSE appender for web interface log streaming -->
+    <appender name="SSE" class="com.statewidesoftware.nscr.SseLogAppender">
+    </appender>
+    
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="SSE" />
     </root>
+    
+    <!-- Specific logger configurations -->
+    <logger name="com.statewidesoftware.nscr" level="DEBUG" />
+    <logger name="io.javalin" level="WARN" />
+    <logger name="org.eclipse.jetty" level="WARN" />
+    <logger name="blobstore.H2BlobStore" level="WARN" />
 </configuration>

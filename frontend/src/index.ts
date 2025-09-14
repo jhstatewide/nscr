@@ -7,6 +7,15 @@ interface RegistryStats {
   unreferencedBlobs: number;
   estimatedSpaceToFree: number;
   lastGcRun?: string;
+  logStreamClients?: number;
+}
+
+interface LogEntry {
+  timestamp: number;
+  level: string;
+  message: string;
+  logger: string;
+  thread: string;
 }
 
 interface GarbageCollectionResult {
@@ -18,6 +27,9 @@ interface GarbageCollectionResult {
 class RegistryWebInterface {
   private container: HTMLElement;
   private isAuthenticated = false;
+  private eventSource: EventSource | null = null;
+  private logs: LogEntry[] = [];
+  private maxLogs = 1000;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -123,11 +135,13 @@ class RegistryWebInterface {
       <div class="container mt-4">
         <div id="dashboard-container"></div>
         <div id="repositories-container" class="mt-4"></div>
+        <div id="logs-container" class="mt-4"></div>
       </div>
     `;
 
     this.loadDashboard();
     this.loadRepositories();
+    this.loadLogs();
 
     // Setup logout if authenticated
     if (this.isAuthenticated) {
@@ -271,6 +285,56 @@ class RegistryWebInterface {
     }
   }
 
+  private loadLogs() {
+    const container = document.getElementById('logs-container');
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Live Logs</h5>
+          <div class="d-flex align-items-center gap-2">
+            <span id="log-stream-status" class="badge bg-danger">Disconnected</span>
+            <button id="start-logs-btn" class="btn btn-success btn-sm">
+              <i class="bi bi-play"></i> Start
+            </button>
+            <button id="stop-logs-btn" class="btn btn-danger btn-sm" disabled>
+              <i class="bi bi-stop"></i> Stop
+            </button>
+            <button id="clear-logs-btn" class="btn btn-secondary btn-sm">
+              <i class="bi bi-trash"></i> Clear
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="log-container" class="log-viewer">
+            <div class="text-center text-muted p-3">
+              Click "Start" to begin streaming logs
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Setup event listeners
+    document.getElementById('start-logs-btn')?.addEventListener('click', () => {
+      this.startLogStreaming();
+      (document.getElementById('start-logs-btn') as HTMLButtonElement).disabled = true;
+      (document.getElementById('stop-logs-btn') as HTMLButtonElement).disabled = false;
+    });
+
+    document.getElementById('stop-logs-btn')?.addEventListener('click', () => {
+      this.stopLogStreaming();
+      (document.getElementById('start-logs-btn') as HTMLButtonElement).disabled = false;
+      (document.getElementById('stop-logs-btn') as HTMLButtonElement).disabled = true;
+    });
+
+    document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
+      this.logs = [];
+      this.updateLogDisplay();
+    });
+  }
+
   private async loadRepositories() {
     const container = document.getElementById('repositories-container');
     if (!container) return;
@@ -390,7 +454,99 @@ class RegistryWebInterface {
 
   private logout() {
     this.isAuthenticated = false;
+    this.stopLogStreaming();
     this.initializeApp();
+  }
+
+  private startLogStreaming() {
+    if (this.eventSource) {
+      this.stopLogStreaming();
+    }
+
+    this.eventSource = new EventSource('/api/logs/stream');
+    
+    this.eventSource.addEventListener('connected', (event) => {
+      console.log('Connected to log stream');
+      this.updateLogStreamStatus(true);
+    });
+
+    this.eventSource.addEventListener('log', (event) => {
+      const logEntry: LogEntry = JSON.parse(event.data);
+      this.addLogEntry(logEntry);
+    });
+
+    this.eventSource.onerror = (error) => {
+      console.error('Log stream error:', error);
+      this.updateLogStreamStatus(false);
+    };
+  }
+
+  private stopLogStreaming() {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+      this.updateLogStreamStatus(false);
+    }
+  }
+
+  private addLogEntry(logEntry: LogEntry) {
+    this.logs.unshift(logEntry);
+    
+    // Keep only the most recent logs
+    if (this.logs.length > this.maxLogs) {
+      this.logs = this.logs.slice(0, this.maxLogs);
+    }
+    
+    this.updateLogDisplay();
+  }
+
+  private updateLogDisplay() {
+    const logContainer = document.getElementById('log-container');
+    if (!logContainer) return;
+
+    const logHtml = this.logs.map(log => {
+      const timestamp = new Date(log.timestamp).toLocaleTimeString();
+      const levelClass = this.getLevelClass(log.level);
+      
+      return `
+        <div class="log-entry ${levelClass}">
+          <span class="log-timestamp">${timestamp}</span>
+          <span class="log-level">${log.level}</span>
+          <span class="log-logger">${log.logger}</span>
+          <span class="log-message">${this.escapeHtml(log.message)}</span>
+        </div>
+      `;
+    }).join('');
+
+    logContainer.innerHTML = logHtml;
+    
+    // Auto-scroll to top (newest logs)
+    logContainer.scrollTop = 0;
+  }
+
+  private getLevelClass(level: string): string {
+    switch (level.toUpperCase()) {
+      case 'ERROR': return 'log-error';
+      case 'WARN': return 'log-warn';
+      case 'INFO': return 'log-info';
+      case 'DEBUG': return 'log-debug';
+      case 'TRACE': return 'log-trace';
+      default: return 'log-default';
+    }
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  private updateLogStreamStatus(connected: boolean) {
+    const statusElement = document.getElementById('log-stream-status');
+    if (statusElement) {
+      statusElement.textContent = connected ? 'Connected' : 'Disconnected';
+      statusElement.className = connected ? 'badge bg-success' : 'badge bg-danger';
+    }
   }
 }
 
