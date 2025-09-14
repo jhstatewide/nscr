@@ -58,15 +58,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val image = ctx.pathParam("image")
             val digest = Digest(ctx.pathParam("digest"))
             logger.info("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
-            if (!blobStore.hasBlob(digest)) {
-                logger.debug("We do not have $digest")
-                ctx.status(404)
-                ctx.result("Not found")
-            } else {
-                logger.debug("We DO have $digest")
-                ctx.status(200)
-                ctx.result("OK")
-            }
+            handleBlobExistenceCheck(ctx, digest, logger)
         }
 
         app.head("/v2/{name}/manifests/{tag}") { ctx ->
@@ -74,14 +66,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
             logger.info { "Checking on manifest for $imageVersion" }
-            if(blobStore.hasManifest(imageVersion)) {
-                logger.debug("We DO have manifest for {}!", imageVersion)
-                ctx.status(200)
-            } else {
-                logger.debug("We DO NOT have manifest for {}!", imageVersion)
-                ctx.status(404)
-                ctx.result("Not found")
-            }
+            handleManifestExistenceCheck(ctx, imageVersion, logger)
         }
 
         app.get("/v2/{name}/manifests/{tag}") { ctx ->
@@ -211,12 +196,41 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
                 ctx.attribute("handle", handle)
             }
         }
+
+    }
+
+    // Helper functions for DRY code
+    private fun handleBlobExistenceCheck(ctx: io.javalin.http.Context, digest: Digest, logger: KLogger) {
+        if (!blobStore.hasBlob(digest)) {
+            logger.debug("We do not have $digest")
+            ctx.status(404)
+            ctx.result("Not found")
+        } else {
+            logger.debug("We DO have $digest")
+            ctx.status(200)
+            ctx.result("OK")
+        }
+    }
+
+    private fun handleManifestExistenceCheck(ctx: io.javalin.http.Context, imageVersion: ImageVersion, logger: KLogger) {
+        if(blobStore.hasManifest(imageVersion)) {
+            logger.debug("We DO have manifest for {}!", imageVersion)
+            ctx.status(200)
+        } else {
+            logger.debug("We DO NOT have manifest for {}!", imageVersion)
+            ctx.status(404)
+            ctx.result("Not found")
+        }
     }
 
     private fun generateSHA256(input: String): String {
         val bytes = input.toByteArray()
         val md = MessageDigest.getInstance("SHA-256")
         val digest = md.digest(bytes)
-        return digest.fold("") { str, it -> str + "%02x".format(it) }
+        val sb = StringBuilder()
+        for (b in digest) {
+            sb.append(String.format("%02x", b))
+        }
+        return sb.toString()
     }
 }

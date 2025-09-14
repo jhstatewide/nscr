@@ -10,6 +10,7 @@ value class Digest(val digestString: String)
 
 data class ImageVersion(val name: String, val tag: String)
 
+// This represents the abstract interface to the blobstore
 interface Blobstore {
     fun hasBlob(digest: Digest): Boolean
     fun nextSessionLocation(sessionID: SessionID): String
