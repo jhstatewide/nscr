@@ -272,7 +272,7 @@ class RegistryWebInterface {
               <h5 class="mb-0"><i class="bi bi-power"></i> Server Control</h5>
             </div>
             <div class="card-body">
-              <p class="text-muted">Shutdown the server (development/testing only).</p>
+              <p class="text-muted">Shutdown the NSCR registry server.</p>
               <button id="shutdown-btn" class="btn btn-danger">
                 <i class="bi bi-power"></i> Shutdown Server
               </button>
@@ -687,11 +687,14 @@ class RegistryWebInterface {
 
   private updateLiveIndicator(live: boolean) {
     const indicator = document.getElementById('live-indicator');
-    if (indicator) {
+    const liveText = indicator?.querySelector('.live-text');
+    if (indicator && liveText) {
       if (live) {
         indicator.className = 'live-indicator live-active';
+        liveText.textContent = 'LIVE';
       } else {
         indicator.className = 'live-indicator live-inactive';
+        liveText.textContent = 'OFFLINE';
       }
     }
   }
