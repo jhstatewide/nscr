@@ -147,6 +147,10 @@ class RegistryWebInterface {
         <div class="container">
           <a class="navbar-brand" href="#">NSCR Registry</a>
           <div class="navbar-nav ms-auto">
+            <div class="live-indicator me-3">
+              <div class="live-dot" id="live-dot"></div>
+              <span class="live-text" id="live-text">OFFLINE</span>
+            </div>
             <span class="navbar-text me-3">Registry Status</span>
             ${this.isAuthenticated ? '<a class="nav-link" href="#" id="logout-btn">Logout</a>' : ''}
           </div>
@@ -170,6 +174,14 @@ class RegistryWebInterface {
         this.logout();
       });
     }
+
+    // Setup shutdown button
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.id === 'shutdown-btn') {
+        this.shutdownServer();
+      }
+    });
   }
 
   private async loadDashboard() {
@@ -252,200 +264,17 @@ class RegistryWebInterface {
         </div>
         <div class="col-md-6">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
               <h5 class="mb-0">Actions</h5>
-              <button id="gc-btn" class="btn btn-warning btn-sm">
-                <i class="bi bi-trash"></i> Run Garbage Collection
-              </button>
             </div>
             <div class="card-body">
-              <p class="text-muted">Run garbage collection to clean up unreferenced blobs and free storage space.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="row mt-3">
-        <div class="col-md-6">
-          <div class="card border-danger">
-            <div class="card-header bg-danger text-white">
-              <h5 class="mb-0"><i class="bi bi-power"></i> Server Control</h5>
-            </div>
-            <div class="card-body">
-              <p class="text-muted">Shutdown the NSCR registry server.</p>
-              <button id="shutdown-btn" class="btn btn-danger">
-                <i class="bi bi-power"></i> Shutdown Server
-              </button>
+              <button class="btn btn-warning me-2" onclick="this.runGarbageCollection()">Run Garbage Collection</button>
+              <button class="btn btn-danger" id="shutdown-btn">Shutdown Server</button>
             </div>
           </div>
         </div>
       </div>
     `;
-
-    // Setup garbage collection button
-    document.getElementById('gc-btn')?.addEventListener('click', () => {
-      this.runGarbageCollection();
-    });
-    
-    // Setup shutdown button
-    document.getElementById('shutdown-btn')?.addEventListener('click', () => {
-      this.shutdownServer();
-    });
-  }
-
-  private async runGarbageCollection() {
-    const btn = document.getElementById('gc-btn') as HTMLButtonElement;
-    const originalText = btn.innerHTML;
-    
-    try {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running...';
-      
-      const response = await fetch('/api/garbage-collect', {
-        method: 'POST',
-      });
-      
-      if (!response.ok) throw new Error('Garbage collection failed');
-      
-      const result: GarbageCollectionResult = await response.json();
-      
-      this.showAlert(`
-        <strong>Garbage Collection Completed!</strong><br>
-        Blobs removed: ${result.blobsRemoved}<br>
-        Manifests removed: ${result.manifestsRemoved}<br>
-        Space freed: ${this.formatBytes(result.spaceFreed)}
-      `, 'success');
-      
-      // Refresh dashboard
-      this.loadDashboard();
-      
-    } catch (error) {
-      this.showAlert(`Failed to run garbage collection: ${error}`, 'danger');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-    }
-  }
-
-  private async shutdownServer() {
-    // Show confirmation dialog
-    const confirmed = confirm(
-      'Are you sure you want to shutdown the server?\n\n' +
-      'This will stop the NSCR registry server completely.\n' +
-      'This action cannot be undone.'
-    );
-    
-    if (!confirmed) {
-      return;
-    }
-    
-    const btn = document.getElementById('shutdown-btn') as HTMLButtonElement;
-    const originalText = btn.innerHTML;
-    
-    try {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Shutting down...';
-      
-      const response = await fetch('/api/shutdown', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) throw new Error('Shutdown request failed');
-      
-      const result = await response.json();
-      
-      this.showAlert(`
-        <strong>Server Shutdown Initiated!</strong><br>
-        ${result.message}<br>
-        <small class="text-muted">The server will shut down in a few seconds...</small>
-      `, 'warning');
-      
-      // Show countdown and redirect after a delay
-      let countdown = 5;
-      const countdownInterval = setInterval(() => {
-        this.showAlert(`
-          <strong>Server is shutting down...</strong><br>
-          Redirecting in ${countdown} seconds
-        `, 'warning');
-        countdown--;
-        
-        if (countdown < 0) {
-          clearInterval(countdownInterval);
-          // Try to redirect, but the server might already be down
-          window.location.href = '/';
-        }
-      }, 1000);
-      
-    } catch (error) {
-      this.showAlert(`Failed to shutdown server: ${error}`, 'danger');
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-    }
-  }
-
-  private loadLogs() {
-    const container = document.getElementById('logs-container');
-    if (!container) return;
-
-    container.innerHTML = `
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <div class="d-flex align-items-center gap-2">
-            <h5 class="mb-0">Live Logs</h5>
-            <div id="live-indicator" class="live-indicator">
-              <span class="live-dot"></span>
-              <span class="live-text">LIVE</span>
-            </div>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <span id="log-stream-status" class="badge bg-danger">
-              <i class="bi bi-wifi-off"></i> Disconnected
-            </span>
-            <button id="start-logs-btn" class="btn btn-success btn-sm">
-              <i class="bi bi-play"></i> Start
-            </button>
-            <button id="stop-logs-btn" class="btn btn-danger btn-sm" disabled>
-              <i class="bi bi-stop"></i> Stop
-            </button>
-            <button id="clear-logs-btn" class="btn btn-secondary btn-sm">
-              <i class="bi bi-trash"></i> Clear
-            </button>
-          </div>
-        </div>
-        <div class="card-body p-0">
-          <div id="log-container" class="log-viewer">
-            <div class="text-center text-muted p-3">
-              <i class="bi bi-arrow-clockwise"></i> Connecting to log stream...
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Setup event listeners
-    document.getElementById('start-logs-btn')?.addEventListener('click', () => {
-      this.startLogStreaming();
-      this.updateButtonStates(true);
-    });
-
-    document.getElementById('stop-logs-btn')?.addEventListener('click', () => {
-      this.stopLogStreaming();
-      this.updateButtonStates(false);
-    });
-
-    document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
-      this.logs = [];
-      this.updateLogDisplay();
-    });
-
-    // Auto-start log streaming when the page loads
-    setTimeout(() => {
-      this.startLogStreaming();
-      this.updateButtonStates(true);
-    }, 1000); // Small delay to ensure everything is loaded
   }
 
   private async loadRepositories() {
@@ -457,155 +286,152 @@ class RegistryWebInterface {
       if (!response.ok) throw new Error('Failed to load repositories');
       
       const data = await response.json();
-      this.renderRepositories(data.repositories);
+      this.renderRepositories(data.repositories || []);
     } catch (error) {
       container.innerHTML = `
-        <div class="alert alert-warning">
-          <h5>Repositories</h5>
+        <div class="alert alert-danger">
+          <h5>Error Loading Repositories</h5>
           <p>Failed to load repositories: ${error}</p>
         </div>
       `;
     }
   }
 
-  private async renderRepositories(repositories: string[]) {
+  private renderRepositories(repositories: string[]) {
     const container = document.getElementById('repositories-container');
     if (!container) return;
 
     if (repositories.length === 0) {
       container.innerHTML = `
         <div class="card">
-          <div class="card-header">
-            <h5 class="mb-0">Repositories</h5>
-          </div>
-          <div class="card-body">
-            <p class="text-muted">No repositories found in the registry.</p>
+          <div class="card-body text-center">
+            <h5 class="card-title">No Repositories</h5>
+            <p class="card-text">No repositories have been pushed to this registry yet.</p>
           </div>
         </div>
       `;
       return;
     }
 
-    // Load tags for each repository
-    const repositoryData = await Promise.all(
-      repositories.map(async (repo) => {
-        try {
-          const response = await fetch(`/v2/${repo}/tags/list`);
-          if (response.ok) {
-            const data = await response.json();
-            return { name: repo, tags: data.tags || [] };
-          }
-        } catch (error) {
-          console.warn(`Failed to load tags for ${repo}:`, error);
-        }
-        return { name: repo, tags: [] };
-      })
-    );
+    const repositoriesHtml = repositories.map(repo => `
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h5 class="card-title mb-1">${this.escapeHtml(repo)}</h5>
+              <small class="text-muted">Repository</small>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" onclick="viewRepository('${this.escapeHtml(repo)}')">View</button>
+              <div class="btn-group">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                  Actions
+                </button>
+                <ul class="dropdown-menu">
+                  <li><a class="dropdown-item" href="#" onclick="copyPullCommand('${this.escapeHtml(repo)}')">Copy Pull Command</a></li>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item text-danger" href="#" onclick="deleteRepository('${this.escapeHtml(repo)}')">Delete Repository</a></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
 
     container.innerHTML = `
-      <div class="card">
-        <div class="card-header">
-          <h5 class="mb-0">Repositories (${repositories.length})</h5>
+      <div class="row">
+        <div class="col-12">
+          <h3>Repositories (${repositories.length})</h3>
         </div>
-        <div class="card-body">
-          <div class="row">
-            ${repositoryData.map(repo => `
-              <div class="col-md-6 mb-3">
-                <div class="card">
-                  <div class="card-body">
-                    <h6 class="card-title">${repo.name}</h6>
-                    <p class="card-text">
-                      <span class="badge bg-secondary">${repo.tags.length} tags</span>
-                    </p>
-                    ${repo.tags.length > 0 ? `
-                      <div class="mt-2">
-                        <small class="text-muted">Latest tags:</small><br>
-                        ${repo.tags.slice(0, 3).map(tag => 
-                          `<span class="badge bg-light text-dark me-1">${tag}</span>`
-                        ).join('')}
-                        ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}
-                      </div>
-                    ` : ''}
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
+      </div>
+      <div class="row">
+        <div class="col-12">
+          ${repositoriesHtml}
         </div>
       </div>
     `;
   }
 
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
+  private loadLogs() {
+    const container = document.getElementById('logs-container');
+    if (!container) return;
 
-  private showAlert(message: string, type: string) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.innerHTML = `
-      ${message}
-      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Live Logs</h5>
+          <div>
+            <button class="btn btn-success btn-sm me-2" id="start-logs-btn">Start</button>
+            <button class="btn btn-danger btn-sm me-2" id="stop-logs-btn" disabled>Stop</button>
+            <button class="btn btn-outline-secondary btn-sm" id="clear-logs-btn">Clear</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="log-viewer" id="log-viewer">
+            <div class="text-muted text-center">Click "Start" to begin live log streaming...</div>
+          </div>
+        </div>
+      </div>
     `;
-    
-    const container = document.getElementById('dashboard-container');
-    if (container) {
-      container.insertBefore(alertDiv, container.firstChild);
-      
-      // Auto-dismiss after 5 seconds
-      setTimeout(() => {
-        if (alertDiv.parentNode) {
-          alertDiv.remove();
-        }
-      }, 5000);
-    }
-  }
 
-  private logout() {
-    this.isAuthenticated = false;
-    this.stopLogStreaming();
-    this.initializeApp();
+    // Setup log control buttons
+    document.getElementById('start-logs-btn')?.addEventListener('click', () => {
+      this.startLogStreaming();
+    });
+
+    document.getElementById('stop-logs-btn')?.addEventListener('click', () => {
+      this.stopLogStreaming();
+    });
+
+    document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
+      this.logs = [];
+      this.updateLogDisplay();
+    });
+
+    // Auto-start log streaming
+    setTimeout(() => {
+      this.startLogStreaming();
+    }, 1000);
   }
 
   private startLogStreaming() {
     if (this.eventSource) {
-      this.stopLogStreaming();
+      return; // Already connected
     }
 
     this.isManualDisconnect = false;
     this.eventSource = new EventSource('/api/logs/stream');
     
-    this.eventSource.addEventListener('connected', (event) => {
-      console.log('Connected to log stream');
-      this.reconnectAttempts = 0; // Reset attempts on successful connection
-      this.updateLogStreamStatus(true);
-      this.updateLiveIndicator(true);
-      this.updateReconnectStatus('Connected');
-    });
-
-    this.eventSource.addEventListener('log', (event) => {
-      const logEntry: LogEntry = JSON.parse(event.data);
-      this.addLogEntry(logEntry);
-    });
+    this.eventSource.onmessage = (event) => {
+      try {
+        const logEntry: LogEntry = JSON.parse(event.data);
+        this.addLogEntry(logEntry);
+      } catch (error) {
+        console.error('Error parsing log entry:', error);
+      }
+    };
 
     this.eventSource.onerror = (error) => {
       console.error('Log stream error:', error);
       this.updateLogStreamStatus(false);
-      this.updateLiveIndicator(false);
       
       if (!this.isManualDisconnect) {
         this.scheduleReconnect();
       }
     };
+
+    this.eventSource.onopen = () => {
+      console.log('Log stream connected');
+      this.reconnectAttempts = 0;
+      this.updateLogStreamStatus(true);
+    };
+
+    this.updateButtonStates(true);
   }
 
   private stopLogStreaming() {
     this.isManualDisconnect = true;
-    
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -614,10 +440,27 @@ class RegistryWebInterface {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
-      this.updateLogStreamStatus(false);
-      this.updateLiveIndicator(false);
-      this.updateReconnectStatus('Disconnected');
     }
+    
+    this.updateLogStreamStatus(false);
+    this.updateButtonStates(false);
+  }
+
+  private scheduleReconnect() {
+    if (this.isManualDisconnect) {
+      return;
+    }
+
+    this.reconnectAttempts++;
+    let delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 5 * 60 * 1000); // Max 5 minutes
+    
+    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+    
+    this.reconnectTimeout = window.setTimeout(() => {
+      if (!this.isManualDisconnect) {
+        this.startLogStreaming();
+      }
+    }, delay);
   }
 
   private addLogEntry(logEntry: LogEntry) {
@@ -631,69 +474,40 @@ class RegistryWebInterface {
     this.updateLogDisplay();
   }
 
-  private updateLogDisplay() {
-    const logContainer = document.getElementById('log-container');
-    if (!logContainer) return;
+  private updateLogDisplay(logsToDisplay?: LogEntry[]) {
+    const logViewer = document.getElementById('log-viewer');
+    if (!logViewer) return;
 
-    const logHtml = this.logs.map(log => {
-      const timestamp = new Date(log.timestamp).toLocaleTimeString();
-      const levelClass = this.getLevelClass(log.level);
-      
-      return `
-        <div class="log-entry ${levelClass}">
-          <span class="log-timestamp">${timestamp}</span>
-          <span class="log-level">${log.level}</span>
-          <span class="log-logger">${log.logger}</span>
-          <span class="log-message">${this.escapeHtml(log.message)}</span>
-        </div>
-      `;
-    }).join('');
-
-    logContainer.innerHTML = logHtml;
+    const logs = logsToDisplay || this.logs;
     
-    // Auto-scroll to top (newest logs)
-    logContainer.scrollTop = 0;
-  }
-
-  private getLevelClass(level: string): string {
-    switch (level.toUpperCase()) {
-      case 'ERROR': return 'log-error';
-      case 'WARN': return 'log-warn';
-      case 'INFO': return 'log-info';
-      case 'DEBUG': return 'log-debug';
-      case 'TRACE': return 'log-trace';
-      default: return 'log-default';
+    if (logs.length === 0) {
+      logViewer.innerHTML = '<div class="text-muted text-center">No logs available</div>';
+      return;
     }
-  }
 
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    const logsHtml = logs.map(log => `
+      <div class="log-entry">
+        <span class="log-timestamp">${new Date(log.timestamp).toLocaleString()}</span>
+        <span class="log-level ${log.level}">${log.level}</span>
+        <span class="log-logger">${this.escapeHtml(log.logger)}</span>
+        <span class="log-message">${this.escapeHtml(log.message)}</span>
+      </div>
+    `).join('');
+
+    logViewer.innerHTML = logsHtml;
+    logViewer.scrollTop = 0; // Auto-scroll to top for newest logs
   }
 
   private updateLogStreamStatus(connected: boolean) {
-    const statusElement = document.getElementById('log-stream-status');
-    if (statusElement) {
+    const liveDot = document.getElementById('live-dot');
+    const liveText = document.getElementById('live-text');
+    
+    if (liveDot && liveText) {
       if (connected) {
-        statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
-        statusElement.className = 'badge bg-success';
-      } else {
-        statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
-        statusElement.className = 'badge bg-danger';
-      }
-    }
-  }
-
-  private updateLiveIndicator(live: boolean) {
-    const indicator = document.getElementById('live-indicator');
-    const liveText = indicator?.querySelector('.live-text');
-    if (indicator && liveText) {
-      if (live) {
-        indicator.className = 'live-indicator live-active';
+        liveDot.classList.add('connected');
         liveText.textContent = 'LIVE';
       } else {
-        indicator.className = 'live-indicator live-inactive';
+        liveDot.classList.remove('connected');
         liveText.textContent = 'OFFLINE';
       }
     }
@@ -709,54 +523,117 @@ class RegistryWebInterface {
     }
   }
 
-  private scheduleReconnect() {
-    if (this.isManualDisconnect) {
-      return; // Don't reconnect if manually disconnected
-    }
-
-    this.reconnectAttempts++;
-    
-    // Calculate delay: exponential backoff up to 5 minutes (300 seconds)
-    let delay: number;
-    if (this.reconnectAttempts <= this.maxReconnectAttempts) {
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s
-      delay = Math.min(Math.pow(2, this.reconnectAttempts - 1) * 1000, 300000);
-    } else {
-      // After max attempts, use 5-minute intervals
-      delay = 300000; // 5 minutes
-    }
-
-    const delaySeconds = Math.round(delay / 1000);
-    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delaySeconds} seconds`);
-    
-    this.updateReconnectStatus(`Reconnecting in ${delaySeconds}s (attempt ${this.reconnectAttempts})`);
-
-    this.reconnectTimeout = window.setTimeout(() => {
-      if (!this.isManualDisconnect) {
-        console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts})`);
-        this.startLogStreaming();
-      }
-    }, delay);
+  private getLevelClass(level: string): string {
+    return level.toLowerCase();
   }
 
-  private updateReconnectStatus(message: string) {
-    const statusElement = document.getElementById('log-stream-status');
-    if (statusElement) {
-      if (message === 'Connected') {
-        statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
-        statusElement.className = 'badge bg-success';
-      } else if (message === 'Disconnected') {
-        statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
-        statusElement.className = 'badge bg-danger';
-      } else if (message.startsWith('Reconnecting')) {
-        statusElement.innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${message}`;
-        statusElement.className = 'badge bg-warning';
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  private async shutdownServer() {
+    const confirmed = confirm('Are you sure you want to shutdown the server? This will stop the registry service.');
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/shutdown', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Show countdown and redirect
+        document.body.innerHTML = `
+          <div class="container mt-5">
+            <div class="row justify-content-center">
+              <div class="col-md-6">
+                <div class="card">
+                  <div class="card-body text-center">
+                    <h4 class="card-title">Server Shutdown</h4>
+                    <p class="card-text">The server is shutting down...</p>
+                    <div class="spinner-border text-primary" role="status">
+                      <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3">This page will redirect in <span id="countdown">5</span> seconds.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        let countdown = 5;
+        const countdownElement = document.getElementById('countdown');
+        const interval = setInterval(() => {
+          countdown--;
+          if (countdownElement) {
+            countdownElement.textContent = countdown.toString();
+          }
+          if (countdown <= 0) {
+            clearInterval(interval);
+            window.location.href = '/';
+          }
+        }, 1000);
+      } else {
+        alert('Failed to shutdown server');
       }
+    } catch (error) {
+      alert('Error shutting down server: ' + error);
+    }
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  private async logout() {
+    try {
+      await fetch('/api/web/logout', { method: 'POST' });
+      this.isAuthenticated = false;
+      this.showLoginForm();
+    } catch (error) {
+      console.error('Logout error:', error);
     }
   }
 }
 
-// Initialize the application when DOM is loaded
+// Global functions for repository actions
+function viewRepository(repoName: string) {
+  alert(`View repository: ${repoName}\n\nThis would open a detailed view of the repository with tags and manifests.`);
+}
+
+function copyPullCommand(repoName: string) {
+  const command = `docker pull localhost:7000/${repoName}`;
+  navigator.clipboard.writeText(command).then(() => {
+    alert('Pull command copied to clipboard!');
+  }).catch(() => {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = command;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    alert('Pull command copied to clipboard!');
+  });
+}
+
+function deleteRepository(repoName: string) {
+  const confirmed = confirm(`Are you sure you want to delete repository "${repoName}"? This action cannot be undone.`);
+  if (confirmed) {
+    alert(`Delete repository: ${repoName}\n\nThis would delete the repository and all its tags and manifests.`);
+  }
+}
+
+// Initialize the app when the page loads
 document.addEventListener('DOMContentLoaded', () => {
   new RegistryWebInterface('app');
 });
