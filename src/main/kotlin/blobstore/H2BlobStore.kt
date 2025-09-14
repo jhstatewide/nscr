@@ -9,6 +9,8 @@ import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.Exception
 import kotlin.io.path.Path
 
@@ -16,13 +18,25 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
+    private val cleanupExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "blobstore-cleanup").apply { isDaemon = true }
+    }
 
     init {
         dataSource.setURL("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
         dataSource.user = "sa"
         dataSource.password = "sa"
+        // Configure connection pooling
+        dataSource.maxConnections = 10
+        dataSource.minConnections = 2
         this.jdbi = Jdbi.create(dataSource)
         provisionTables()
+        
+        // Register shutdown hook for proper cleanup
+        Runtime.getRuntime().addShutdownHook(Thread {
+            logger.info("Shutting down H2BlobStore...")
+            cleanup()
+        })
     }
 
     @Throws(Exception::class)
@@ -80,17 +94,18 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             logger.info("Uploading blob of size $size bytes")
 
             // get an input stream for the file
-            val fileInputStream = tempFile.inputStream()
-            jdbi.useTransaction<RuntimeException> { handle ->
-                val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
-                statement.setString(1, sessionID.id)
-                if (blobNumber != null) {
-                    statement.setInt(2, blobNumber)
+            tempFile.inputStream().use { fileInputStream ->
+                jdbi.useTransaction<RuntimeException> { handle ->
+                    val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
+                    statement.setString(1, sessionID.id)
+                    if (blobNumber != null) {
+                        statement.setInt(2, blobNumber)
+                    }
+                    statement.setBinaryStream(3, fileInputStream, size)
+                    val result = statement.executeUpdate()
+                    handle.commit()
+                    logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
                 }
-                statement.setBinaryStream(3, fileInputStream, size)
-                val result = statement.executeUpdate()
-                handle.commit()
-                logger.info("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
             }
             return size
         } finally {
@@ -192,15 +207,16 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
                 logger.info("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
 
                 // Read the stitched blob and insert it as a new blob with the digest
-                val stitchedInputStream = tempFile.inputStream()
-                val insertStatement = handle.connection.prepareStatement(
-                    "INSERT INTO blobs(sessionID, blobNumber, digest, content) VALUES (?, ?, ?, ?)"
-                )
-                insertStatement.setString(1, sessionID.id)
-                insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
-                insertStatement.setString(3, digest.digestString)
-                insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
-                insertStatement.executeUpdate()
+                tempFile.inputStream().use { stitchedInputStream ->
+                    val insertStatement = handle.connection.prepareStatement(
+                        "INSERT INTO blobs(sessionID, blobNumber, digest, content) VALUES (?, ?, ?, ?)"
+                    )
+                    insertStatement.setString(1, sessionID.id)
+                    insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
+                    insertStatement.setString(3, digest.digestString)
+                    insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
+                    insertStatement.executeUpdate()
+                }
 
                 // Delete the original chunk blobs
                 val deleteStatement = handle.connection.prepareStatement(
@@ -304,22 +320,23 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     }
 
     override fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit) {
-        val handle = jdbi.open()
-        val stream = handle.createQuery("select * from blobs where digest = :digest")
-            .bind("digest", imageVersion.tag)
-            .map { rs, _ ->
-                rs.getBinaryStream("content")
-            }.first()
-        handler(stream, handle)
+        jdbi.useHandle<Exception> { handle ->
+            val stream = handle.createQuery("select * from blobs where digest = :digest")
+                .bind("digest", imageVersion.tag)
+                .map { rs, _ ->
+                    rs.getBinaryStream("content")
+                }.first()
+            handler(stream, handle)
+        }
     }
 
     override fun countBlobs(): Long {
-        val handle = jdbi.open()
-        val count = handle.createQuery("select count(*) as count from blobs")
-            .map { rs, _ ->
-                rs.getLong("count")
-            }.first()
-        return count
+        return jdbi.withHandle<Long, Exception> { handle ->
+            handle.createQuery("select count(*) as count from blobs")
+                .map { rs, _ ->
+                    rs.getLong("count")
+                }.first()
+        }
     }
 
     override fun removeManifest(image: ImageVersion) {
@@ -398,5 +415,46 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         }
         val digest = md.digest()
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Clean up resources and close connections
+     */
+    fun cleanup() {
+        try {
+            logger.info("Starting H2BlobStore cleanup...")
+            
+            // Shutdown cleanup executor
+            cleanupExecutor.shutdown()
+            if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                logger.warn("Cleanup executor did not terminate gracefully, forcing shutdown")
+                cleanupExecutor.shutdownNow()
+            }
+            
+            // Close database connections
+            try {
+                dataSource.close()
+                logger.info("Database connections closed successfully")
+            } catch (e: Exception) {
+                logger.error("Error closing database connections: ${e.message}")
+            }
+            
+            logger.info("H2BlobStore cleanup completed")
+        } catch (e: Exception) {
+            logger.error("Error during H2BlobStore cleanup: ${e.message}")
+        }
+    }
+
+    /**
+     * Schedule cleanup of temporary files
+     */
+    private fun scheduleCleanup(cleanupTask: () -> Unit) {
+        cleanupExecutor.submit {
+            try {
+                cleanupTask()
+            } catch (e: Exception) {
+                logger.error("Error during scheduled cleanup: ${e.message}")
+            }
+        }
     }
 }

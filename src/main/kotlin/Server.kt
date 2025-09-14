@@ -23,10 +23,32 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
 
     init {
         bindApp(app, logger)
+        
+        // Register shutdown hook for proper cleanup
+        Runtime.getRuntime().addShutdownHook(Thread {
+            logger.info("Shutting down RegistryServerApp...")
+            stop()
+        })
     }
 
     fun start(port: Int) {
         app.start(port)
+    }
+
+    fun stop() {
+        try {
+            logger.info("Stopping Javalin application...")
+            app.stop()
+            
+            // Clean up blobstore resources
+            if (blobStore is H2BlobStore) {
+                blobStore.cleanup()
+            }
+            
+            logger.info("RegistryServerApp stopped successfully")
+        } catch (e: Exception) {
+            logger.error("Error stopping RegistryServerApp: ${e.message}")
+        }
     }
 
     fun javalinApp(): Javalin {
@@ -38,10 +60,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
         }
 
-        app.after("/v2/{name}/blobs/{tag}") { ctx ->
-            logger.debug("Closing database handle!")
-            ctx.attribute<Handle>("handle")?.close()
-        }
+        // Note: Database handles are now automatically managed by JDBI's useHandle/withHandle methods
 
         app.get("/") { ctx ->
             logger.debug("Got a request to URL: ${ctx.url()}")
@@ -200,7 +219,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             blobStore.getBlob(imageVersion) { stream, handle ->
                 ctx.result(stream)
                 ctx.status(200)
-                ctx.attribute("handle", handle)
+                // Note: Handle is automatically closed by JDBI's useHandle method
             }
         }
 
