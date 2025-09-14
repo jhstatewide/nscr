@@ -6,6 +6,7 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.github.ben-manes.versions") version "0.52.0"
+    id("io.gitlab.arturbosch.detekt") version "1.23.6"
 }
 
 group = "com.statewidesoftware"
@@ -71,5 +72,22 @@ application {
 tasks.jar {
     manifest {
         attributes["Main-Class"] = "ServerKt"
+    }
+}
+
+// Detekt configuration
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom("$projectDir/detekt.yml")
+    baseline = file("$projectDir/detekt-baseline.xml")
+}
+
+tasks.detekt {
+    reports {
+        html.required.set(true)
+        xml.required.set(false)
+        txt.required.set(false)
+        sarif.required.set(false)
     }
 }
