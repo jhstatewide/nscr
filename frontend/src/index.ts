@@ -1,5 +1,17 @@
 // Bootstrap is loaded via CDN in the HTML template
 
+// Global interface for window object
+declare global {
+  interface Window {
+    registryInterface?: RegistryWebInterface;
+  }
+}
+
+// Track ongoing deletions to prevent multiple simultaneous deletions
+const ongoingDeletions = new Set<string>();
+
+export {};
+
 interface RegistryStats {
   repositories: number;
   totalBlobs: number;
@@ -36,6 +48,7 @@ class RegistryWebInterface {
   private isManualDisconnect = false;
   private statusRefreshInterval: number | null = null;
   private currentStats: RegistryStats | null = null;
+  private repositoryListenersSetup = false;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -201,11 +214,13 @@ class RegistryWebInterface {
       });
     }
 
-    // Setup shutdown button
+    // Setup action buttons
     document.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       if (target.id === 'shutdown-btn') {
         this.shutdownServer();
+      } else if (target.id === 'gc-btn') {
+        this.runGarbageCollection();
       }
     });
   }
@@ -317,7 +332,7 @@ class RegistryWebInterface {
               <h5 class="mb-0">Actions</h5>
             </div>
             <div class="card-body">
-              <button class="btn btn-warning me-2" onclick="this.runGarbageCollection()">Run Garbage Collection</button>
+              <button class="btn btn-warning me-2" id="gc-btn">Run Garbage Collection</button>
               <button class="btn btn-danger" id="shutdown-btn">Shutdown Server</button>
             </div>
           </div>
@@ -371,17 +386,9 @@ class RegistryWebInterface {
               <small class="text-muted">Repository</small>
             </div>
             <div>
-              <button class="btn btn-primary btn-sm" onclick="viewRepository('${this.escapeHtml(repo)}')">View</button>
-              <div class="btn-group">
-                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                  Actions
-                </button>
-                <ul class="dropdown-menu">
-                  <li><a class="dropdown-item" href="#" onclick="copyPullCommand('${this.escapeHtml(repo)}')">Copy Pull Command</a></li>
-                  <li><hr class="dropdown-divider"></li>
-                  <li><a class="dropdown-item text-danger" href="#" onclick="deleteRepository('${this.escapeHtml(repo)}')">Delete Repository</a></li>
-                </ul>
-              </div>
+              <button class="btn btn-primary btn-sm me-2" data-action="view" data-repo="${this.escapeHtml(repo)}">View</button>
+              <button class="btn btn-outline-info btn-sm me-2" data-action="copy" data-repo="${this.escapeHtml(repo)}">Copy Pull</button>
+              <button class="btn btn-outline-danger btn-sm" data-action="delete" data-repo="${this.escapeHtml(repo)}">Delete</button>
             </div>
           </div>
         </div>
@@ -400,6 +407,54 @@ class RegistryWebInterface {
         </div>
       </div>
     `;
+
+    // Add event listeners for repository action buttons
+    this.setupRepositoryActionListeners();
+    
+    // Remove any old onclick attributes that might still be present
+    this.cleanupOldOnclickAttributes();
+  }
+
+  private setupRepositoryActionListeners() {
+    // Only set up listeners once to prevent duplicate event handlers
+    if (this.repositoryListenersSetup) return;
+    
+    console.log('Setting up repository action listeners');
+    
+    // Use event delegation to handle all repository action buttons
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.matches('[data-action]')) {
+        const action = target.getAttribute('data-action');
+        const repoName = target.getAttribute('data-repo');
+        
+        console.log('Repository action clicked:', action, repoName);
+        
+        if (!repoName) return;
+        
+        switch (action) {
+          case 'view':
+            viewRepository(repoName);
+            break;
+          case 'copy':
+            copyPullCommand(repoName);
+            break;
+          case 'delete':
+            deleteRepository(repoName);
+            break;
+        }
+      }
+    });
+    
+    this.repositoryListenersSetup = true;
+  }
+
+  private cleanupOldOnclickAttributes() {
+    // Remove any old onclick attributes from repository buttons
+    const buttons = document.querySelectorAll('button[onclick*="deleteRepository"], button[onclick*="viewRepository"], button[onclick*="copyPullCommand"]');
+    buttons.forEach(button => {
+      button.removeAttribute('onclick');
+    });
   }
 
   private loadLogs() {
@@ -759,6 +814,55 @@ class RegistryWebInterface {
       console.error('Logout error:', error);
     }
   }
+
+  private async runGarbageCollection() {
+    const gcButton = document.getElementById('gc-btn') as HTMLButtonElement;
+    if (!gcButton) return;
+
+    const confirmed = confirm('Run garbage collection? This will remove unreferenced blobs and free up disk space.');
+    if (!confirmed) return;
+
+    // Store original text outside try block
+    const originalText = gcButton.textContent;
+
+    try {
+      // Show loading state
+      gcButton.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>Running GC...';
+      gcButton.disabled = true;
+
+      const response = await fetch('/api/garbage-collect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Garbage collection failed: ${response.statusText}`);
+      }
+
+      const result: GarbageCollectionResult = await response.json();
+      
+      // Show success message
+      const message = `Garbage collection completed!\n\n` +
+        `• Blobs removed: ${result.blobsRemoved}\n` +
+        `• Manifests removed: ${result.manifestsRemoved}\n` +
+        `• Space freed: ${this.formatBytes(result.spaceFreed)}`;
+      
+      alert(message);
+
+      // Refresh dashboard to show updated stats
+      this.loadDashboard();
+
+    } catch (error) {
+      console.error('Garbage collection error:', error);
+      alert(`Garbage collection failed: ${(error as Error).message}`);
+    } finally {
+      // Reset button state
+      gcButton.textContent = originalText;
+      gcButton.disabled = false;
+    }
+  }
 }
 
 // Global functions for repository actions
@@ -782,14 +886,100 @@ function copyPullCommand(repoName: string) {
   });
 }
 
-function deleteRepository(repoName: string) {
-  const confirmed = confirm(`Are you sure you want to delete repository "${repoName}"? This action cannot be undone.`);
-  if (confirmed) {
-    alert(`Delete repository: ${repoName}\n\nThis would delete the repository and all its tags and manifests.`);
+async function deleteRepository(repoName: string) {
+  console.log('deleteRepository called with:', repoName, 'at', new Date().toISOString());
+  
+  // Prevent multiple simultaneous deletions of the same repository
+  if (ongoingDeletions.has(repoName)) {
+    console.log('Deletion already in progress for:', repoName);
+    return;
+  }
+  
+  ongoingDeletions.add(repoName);
+  
+  try {
+    // Get tag count first for better confirmation
+    let tagCount = 0;
+    try {
+      const tagsResponse = await fetch(`/v2/${encodeURIComponent(repoName)}/tags/list`);
+      if (tagsResponse.ok) {
+        const tagsData = await tagsResponse.json();
+        tagCount = (tagsData.tags || []).length;
+      }
+    } catch (error) {
+      console.warn('Could not get tag count for confirmation:', error as Error);
+    }
+
+    const tagInfo = tagCount > 0 ? ` (${tagCount} tag${tagCount === 1 ? '' : 's'})` : '';
+    const confirmed = confirm(`Are you sure you want to delete repository "${repoName}"${tagInfo}?\n\nThis will delete all tags and manifests in this repository. This action cannot be undone.`);
+    if (!confirmed) {
+      ongoingDeletions.delete(repoName);
+      return;
+    }
+
+    try {
+    // Show loading state
+    const deleteButton = document.querySelector(`[data-action="delete"][data-repo="${repoName}"]`) as HTMLElement;
+    if (deleteButton) {
+      deleteButton.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>Deleting...';
+      deleteButton.classList.add('disabled');
+    }
+
+    // Single API call to delete entire repository
+    const deleteResponse = await fetch(`/v2/${encodeURIComponent(repoName)}`, {
+      method: 'DELETE'
+    });
+
+    if (deleteResponse.ok) {
+      const result = await deleteResponse.json();
+      const deletedCount = result.manifestsDeleted || 0;
+      
+      const message = `Successfully deleted repository "${repoName}"!\n\n` +
+        `• Manifests deleted: ${deletedCount}\n\n` +
+        `Note: You may want to run garbage collection to free up disk space from unreferenced blobs.`;
+      
+      alert(message);
+      
+      // Refresh the repository list and dashboard
+      if ((window as any).registryInterface) {
+        (window as any).registryInterface.loadRepositories();
+        (window as any).registryInterface.loadDashboard();
+      }
+      
+      // Don't reset button state after successful deletion - the repository list will be refreshed
+      return;
+    } else if (deleteResponse.status === 404) {
+      alert(`Repository "${repoName}" not found.`);
+    } else {
+      const errorText = await deleteResponse.text();
+      throw new Error(`Failed to delete repository: ${deleteResponse.statusText} - ${errorText}`);
+    }
+  } catch (error) {
+    console.error('Error deleting repository:', error);
+    alert(`Error deleting repository "${repoName}": ${(error as Error).message}`);
+  } finally {
+    // Only reset button state if deletion wasn't successful (successful deletions return early)
+    const deleteButton = document.querySelector(`[data-action="delete"][data-repo="${repoName}"]`) as HTMLElement;
+    if (deleteButton) {
+      deleteButton.innerHTML = 'Delete';
+      deleteButton.classList.remove('disabled');
+    }
+    
+    // Remove from ongoing deletions
+    ongoingDeletions.delete(repoName);
+  }
+  } catch (error) {
+    console.error('Error in deleteRepository:', error);
+    ongoingDeletions.delete(repoName);
   }
 }
 
 // Initialize the app when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-  new RegistryWebInterface('app');
+  (window as any).registryInterface = new RegistryWebInterface('app');
+  
+  // Make functions globally available for any remaining onclick attributes
+  (window as any).viewRepository = viewRepository;
+  (window as any).copyPullCommand = copyPullCommand;
+  (window as any).deleteRepository = deleteRepository;
 });

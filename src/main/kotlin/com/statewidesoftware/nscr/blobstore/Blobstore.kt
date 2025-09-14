@@ -41,6 +41,7 @@ interface Blobstore {
     fun removeManifestIfExists(image: ImageVersion): Boolean
     fun listRepositories(): List<String>
     fun listTags(repository: String): List<String>
+    fun deleteRepository(repository: String): Int
     fun garbageCollect(): GarbageCollectionResult
     fun blobCountForSession(sessionID: SessionID): Int
     fun getGarbageCollectionStats(): GarbageCollectionStats

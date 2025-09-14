@@ -490,6 +490,32 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.json(response)
         }
 
+        // Delete entire repository (all manifests/tags)
+        app.delete("/v2/{name}") { ctx ->
+            val name = ctx.pathParam("name")
+            logger.info("Deleting repository: $name")
+            
+            try {
+                val deletedCount = blobStore.deleteRepository(name)
+                
+                if (deletedCount > 0) {
+                    ctx.status(202)
+                    val response = mapOf(
+                        "message" to "Repository deleted",
+                        "manifestsDeleted" to deletedCount
+                    )
+                    ctx.json(response)
+                } else {
+                    ctx.status(404)
+                    ctx.result("Repository not found")
+                }
+            } catch (e: Exception) {
+                logger.error("Error deleting repository $name: ${e.message}", e)
+                ctx.status(500)
+                ctx.result("Internal server error")
+            }
+        }
+
         // Garbage collection endpoint
         app.post("/api/garbage-collect") { ctx ->
             logger.info("Starting garbage collection...")

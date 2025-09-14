@@ -569,6 +569,28 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         }
     }
 
+    override fun deleteRepository(repository: String): Int {
+        return jdbi.inTransaction<Int, Exception> { handle ->
+            try {
+                logger.info("Deleting repository: $repository")
+                
+                // Delete all manifests for this repository
+                val deletedManifests = handle.createUpdate("DELETE FROM manifests WHERE name = :name")
+                    .bind("name", repository)
+                    .execute()
+                
+                logger.info("Deleted $deletedManifests manifests for repository: $repository")
+                deletedManifests
+            } catch (e: SQLException) {
+                logger.error("SQL error in deleteRepository for $repository: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in deleteRepository for $repository: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
     /**
      * Check if disk space is below the configured threshold
      */
