@@ -7,18 +7,34 @@ services:
       dockerfile: docker/Dockerfile
     container_name: nscr-registry
     ports:
-      - "7000:7000"
+      - "${NSCR_PORT:-7000}:${NSCR_PORT:-7000}"
     volumes:
       # Persistent data storage
       - nscr_data:/app/data
       # Optional: Mount custom logback configuration
       # - ./logback.xml:/app/logback.xml:ro
     environment:
-      # Optional: Configure JVM settings
-      - JAVA_OPTS=-Xmx512m -Xms256m
+      # NSCR Configuration
+      - NSCR_DATABASE_PATH=/app/data
+      - NSCR_DB_USER=${NSCR_DB_USER:-nscr_user}
+      - NSCR_DB_PASSWORD=${NSCR_DB_PASSWORD:-nscr_password}
+      - NSCR_DB_MAX_CONNECTIONS=${NSCR_DB_MAX_CONNECTIONS:-20}
+      - NSCR_DB_MIN_CONNECTIONS=${NSCR_DB_MIN_CONNECTIONS:-5}
+      - NSCR_PORT=${NSCR_PORT:-7000}
+      - NSCR_HOST=${NSCR_HOST:-0.0.0.0}
+      - NSCR_LOG_LEVEL=${NSCR_LOG_LEVEL:-INFO}
+      - NSCR_REGISTRY_URL=${NSCR_REGISTRY_URL:-http://localhost:${NSCR_PORT:-7000}}
+      - NSCR_JWT_SECRET=${NSCR_JWT_SECRET:-change-this-secret-in-production}
+      - NSCR_TOKEN_EXPIRY=${NSCR_TOKEN_EXPIRY:-3600}
+      - NSCR_GC_ENABLED=${NSCR_GC_ENABLED:-true}
+      - NSCR_GC_INTERVAL_HOURS=${NSCR_GC_INTERVAL_HOURS:-24}
+      - NSCR_MAX_UPLOAD_SIZE_MB=${NSCR_MAX_UPLOAD_SIZE_MB:-1024}
+      - NSCR_CHUNK_SIZE_MB=${NSCR_CHUNK_SIZE_MB:-10}
+      # JVM Configuration
+      - JAVA_OPTS=${JAVA_OPTS:--Xmx512m -Xms256m}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7000/v2"]
+      test: ["CMD", "curl", "-f", "http://localhost:${NSCR_PORT:-7000}/v2"]
       interval: 30s
       timeout: 10s
       retries: 3

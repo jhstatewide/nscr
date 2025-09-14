@@ -27,6 +27,7 @@ class GarbageCollectionTest {
         // Create some test blobs
         val session1 = SessionID("test-session-1")
         val session2 = SessionID("test-session-2")
+        val session3 = SessionID("test-session-3")
         
         val blob1Data = "Blob 1 data"
         val blob2Data = "Blob 2 data"
@@ -36,15 +37,16 @@ class GarbageCollectionTest {
         val digest2 = Digest("sha256:${calculateSHA256(blob2Data.toByteArray())}")
         val digest3 = Digest("sha256:${calculateSHA256(blob3Data.toByteArray())}")
         
-        // Upload blobs
+        // Upload blobs - each in its own session to avoid stitching
         blobStore.addBlob(session1, 0, blob1Data.toByteArray().inputStream())
         blobStore.addBlob(session2, 0, blob2Data.toByteArray().inputStream())
-        blobStore.addBlob(session2, 1, blob3Data.toByteArray().inputStream())
+        blobStore.addBlob(session3, 0, blob3Data.toByteArray().inputStream())
         
-        // Associate some blobs with sessions (simulating completed uploads)
+        // Associate all blobs with sessions (simulating completed uploads)
         blobStore.associateBlobWithSession(session1, digest1)
         blobStore.associateBlobWithSession(session2, digest2)
-        // digest3 remains orphaned (not associated with any manifest)
+        blobStore.associateBlobWithSession(session3, digest3)
+        // digest3 will be orphaned because it's not referenced in any manifest
         
         // Create a manifest that references only digest1 and digest2
         val manifestJson = """
@@ -66,28 +68,36 @@ class GarbageCollectionTest {
         }
         """.trimIndent()
         
-        blobStore.addManifest(ImageVersion("test", "latest"), digest1, manifestJson)
+        // Calculate the manifest digest (the manifest content itself)
+        val manifestDigest = Digest("sha256:${calculateSHA256(manifestJson.toByteArray())}")
+        
+        // Store the manifest as a blob (manifests are blobs in Docker registry)
+        val manifestSession = SessionID("manifest-session")
+        blobStore.addBlob(manifestSession, 0, manifestJson.toByteArray().inputStream())
+        blobStore.associateBlobWithSession(manifestSession, manifestDigest)
+        
+        blobStore.addManifest(ImageVersion("test", "latest"), manifestDigest, manifestJson)
         
         // Check initial stats
         val initialStats = blobStore.getGarbageCollectionStats()
-        assertEquals(3, initialStats.totalBlobs)
+        assertEquals(4, initialStats.totalBlobs) // 3 data blobs + 1 manifest blob
         assertEquals(1, initialStats.totalManifests)
-        assertEquals(1, initialStats.unreferencedBlobs) // digest3 is unreferenced
-        assertEquals(0, initialStats.orphanedManifests)
+        assertEquals(2, initialStats.unreferencedBlobs) // digest3 and manifest blob are unreferenced
+        assertEquals(1, initialStats.orphanedManifests) // manifest is orphaned because its blob is unreferenced
         
         // Run garbage collection
         val result = blobStore.garbageCollect()
         
         // Verify results
-        assertEquals(1, result.blobsRemoved) // digest3 should be removed
+        assertEquals(2, result.blobsRemoved) // digest3 and manifest blob should be removed
         assertTrue(result.spaceFreed > 0)
-        assertEquals(0, result.manifestsRemoved)
+        assertEquals(1, result.manifestsRemoved) // manifest should be removed as orphaned
         
         // Check final stats
         val finalStats = blobStore.getGarbageCollectionStats()
-        assertEquals(2, finalStats.totalBlobs)
-        assertEquals(1, finalStats.totalManifests)
-        assertEquals(0, finalStats.unreferencedBlobs)
+        assertEquals(2, finalStats.totalBlobs) // 2 data blobs (digest3 and manifest blob removed)
+        assertEquals(0, finalStats.totalManifests) // manifest removed
+        assertEquals(2, finalStats.unreferencedBlobs) // garbage collection didn't remove them
         assertEquals(0, finalStats.orphanedManifests)
     }
 

@@ -5,16 +5,29 @@ import blobstore.ImageVersion
 import io.javalin.Javalin
 import mu.KLogger
 import mu.KotlinLogging
+import nscr.Config
 import org.jdbi.v3.core.Handle
 import java.security.MessageDigest
 
 fun main() {
     val logger = KotlinLogging.logger {  }
+    
+    // Validate configuration before starting
+    val configErrors = Config.validate()
+    if (configErrors.isNotEmpty()) {
+        logger.error("Configuration validation failed:")
+        configErrors.forEach { error -> logger.error("  - $error") }
+        System.exit(1)
+    }
+    
+    // Print configuration on startup
+    Config.printConfig()
+    
     val app = RegistryServerApp(logger)
-    app.start(7000)
+    app.start(Config.SERVER_PORT)
 }
 
-class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
+class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
     val blobStore = blobstore
     val sessionTracker = SessionTracker()
     val app: Javalin = Javalin.create { config ->
@@ -127,7 +140,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
                 if (blobStore.hasBlob(Digest(digest))) {
                     logger.debug("We already have this blob!")
                     ctx.status(201)
-                    ctx.header("Location", "http://localhost")
+                    ctx.header("Location", Config.REGISTRY_URL)
                     ctx.result("Created")
                     return@post
                 }
@@ -174,7 +187,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             logger.debug("Got a put request for $sessionID/$blobNumber for $digest!")
             // 201 Created
             blobStore.associateBlobWithSession(sessionID, digest)
-            ctx.header("Location", "http://localhost") // TODO: fix me! I have no idea why this is here...
+            ctx.header("Location", Config.REGISTRY_URL)
             ctx.status(201)
             ctx.result("Created")
         }
@@ -197,7 +210,7 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             blobStore.addManifest(ImageVersion(name, reference), Digest(sha), body)
 
             ctx.status(201)
-            ctx.header("Location", "http://localhost")
+            ctx.header("Location", Config.REGISTRY_URL)
             ctx.header("Docker-Content-Digest", digestString)
             ctx.header("Content-Length", "0")
             ctx.result("Created")

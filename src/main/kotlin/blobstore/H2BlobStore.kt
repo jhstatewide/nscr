@@ -1,6 +1,7 @@
 package blobstore
 
 import SessionID
+import nscr.Config
 import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.Exception
 import kotlin.io.path.Path
 
-class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
+class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
@@ -27,13 +28,15 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
 
     init {
         dataSource.setURL("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
-        dataSource.user = "sa"
-        dataSource.password = "sa"
-        // Configure connection pooling
-        dataSource.maxConnections = 10
-        dataSource.minConnections = 2
+        dataSource.user = Config.DATABASE_USER
+        dataSource.password = Config.DATABASE_PASSWORD
+        // Note: H2 JdbcDataSource doesn't support connection pooling configuration
+        // Connection pooling is handled by the JVM and JDBI
         this.jdbi = Jdbi.create(dataSource)
         provisionTables()
+        
+        logger.info("H2BlobStore initialized with database path: ${dataDirectory.toAbsolutePath()}")
+        logger.info("Database user: ${Config.DATABASE_USER}, max connections: ${Config.DATABASE_MAX_CONNECTIONS}")
         
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
@@ -133,13 +136,46 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     override fun associateBlobWithSession(sessionID: SessionID, digest: Digest) {
         val blobCount = blobCountForSession(sessionID)
         if (blobCount == 1) {
-            // we only have a single blob
-            val query = "update blobs set digest = ? where sessionID = ?"
+            // we only have a single blob - validate digest
             jdbi.useTransaction<Exception> { handle ->
-                handle.createUpdate(query).bind(0, digest.digestString)
-                    .bind(1, sessionID.id).execute()
+                // Get the blob content to validate digest
+                val blobContent = handle.createQuery("SELECT content FROM blobs WHERE sessionID = :sessionID")
+                    .bind("sessionID", sessionID.id)
+                    .map { rs, _ -> rs.getBinaryStream("content") }
+                    .first()
+                
+                // Calculate digest of the blob content
+                val tempFile = File.createTempFile("digest_validation", "tmp")
+                try {
+                    tempFile.outputStream().use { outputStream ->
+                        blobContent.use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    
+                    val calculatedDigest = calculateSHA256(tempFile)
+                    val expectedDigest = if (digest.digestString.startsWith("sha256:")) {
+                        digest.digestString.substring(7) // Remove "sha256:" prefix
+                    } else {
+                        digest.digestString
+                    }
+                    
+                    if (calculatedDigest != expectedDigest) {
+                        throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
+                    }
+                    
+                    // Update the blob with the validated digest
+                    val query = "update blobs set digest = ? where sessionID = ?"
+                    handle.createUpdate(query).bind(0, digest.digestString)
+                        .bind(1, sessionID.id).execute()
+                    
+                    logger.info("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
+                } finally {
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                    }
+                }
             }
-            logger.info("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
         } else {
             // Handle multi-part uploads by stitching chunks together
             logger.info("Stitching $blobCount blob chunks for session ${sessionID.id}")
@@ -608,14 +644,6 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 logger.warn("Cleanup executor did not terminate gracefully, forcing shutdown")
                 cleanupExecutor.shutdownNow()
-            }
-            
-            // Close database connections
-            try {
-                dataSource.close()
-                logger.info("Database connections closed successfully")
-            } catch (e: Exception) {
-                logger.error("Error closing database connections: ${e.message}")
             }
             
             logger.info("H2BlobStore cleanup completed")

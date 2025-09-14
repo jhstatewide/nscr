@@ -66,7 +66,7 @@ class MultiPartUploadTest {
         
         // Test retrieving the blob
         var retrievedData = ""
-        blobStore.getBlob(ImageVersion("test", expectedDigest)) { stream, handle ->
+        blobStore.getBlob(ImageVersion("test", digest.digestString)) { stream, handle ->
             retrievedData = stream.bufferedReader().readText()
             handle.close()
         }

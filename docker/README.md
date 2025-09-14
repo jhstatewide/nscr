@@ -101,11 +101,51 @@ docker push localhost:7000/alpine:latest
 
 ### Environment Variables
 
+NSCR supports extensive configuration through environment variables. All variables have sensible defaults for development.
+
+#### Database Configuration
+- `NSCR_DATABASE_PATH` - Database storage path (default: `/app/data`)
+- `NSCR_DB_USER` - Database username (default: `nscr_user`)
+- `NSCR_DB_PASSWORD` - Database password (default: `nscr_password`)
+- `NSCR_DB_MAX_CONNECTIONS` - Maximum database connections (default: `20`)
+- `NSCR_DB_MIN_CONNECTIONS` - Minimum database connections (default: `5`)
+
+#### Server Configuration
+- `NSCR_PORT` - Server port (default: `7000`)
+- `NSCR_HOST` - Server host (default: `0.0.0.0`)
+- `NSCR_LOG_LEVEL` - Logging level (default: `INFO`)
+- `NSCR_REGISTRY_URL` - Registry URL for responses (default: `http://localhost:7000`)
+
+#### Authentication Configuration (Future Use)
+- `NSCR_JWT_SECRET` - JWT secret key (default: `change-this-secret-key-in-production`)
+- `NSCR_TOKEN_EXPIRY` - Token expiry in seconds (default: `3600`)
+
+#### Garbage Collection Configuration
+- `NSCR_GC_ENABLED` - Enable garbage collection (default: `true`)
+- `NSCR_GC_INTERVAL_HOURS` - GC interval in hours (default: `24`)
+
+#### Upload Configuration
+- `NSCR_MAX_UPLOAD_SIZE_MB` - Maximum upload size in MB (default: `1024`)
+- `NSCR_CHUNK_SIZE_MB` - Chunk size for multi-part uploads in MB (default: `10`)
+
+#### JVM Configuration
 - `JAVA_OPTS` - JVM options (default: `-Xmx512m -Xms256m`)
+
+### Custom Configuration
+
+Create a `.env` file in the docker directory to override defaults:
+
+```bash
+# Example .env file
+NSCR_PORT=8080
+NSCR_DB_PASSWORD=my_secure_password
+NSCR_LOG_LEVEL=DEBUG
+NSCR_MAX_UPLOAD_SIZE_MB=2048
+```
 
 ### Ports
 
-- `7000` - NSCR registry API
+- `7000` (or `NSCR_PORT`) - NSCR registry API
 
 ### Volumes
 

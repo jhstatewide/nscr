@@ -2,6 +2,7 @@ import io.javalin.testtools.JavalinTest
 import mu.KotlinLogging
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ServerLifecycleTest {
 
@@ -14,16 +15,15 @@ class ServerLifecycleTest {
         val javalinApp = app.javalinApp()
         assertTrue(javalinApp != null, "Javalin app should be created")
         
-        // Test basic functionality
+        // Test basic functionality and registry API
         JavalinTest.test(javalinApp) { _, client ->
-            val response = client.get("/")
-            assertEquals("Hello World", response.body?.string())
-        }
-        
-        // Test registry API
-        JavalinTest.test(javalinApp) { _, client ->
-            val response = client.get("/v2")
-            assertEquals(200, response.code)
+            // Test basic functionality
+            val response1 = client.get("/")
+            assertEquals("Hello World", response1.body?.string())
+            
+            // Test registry API
+            val response2 = client.get("/v2")
+            assertEquals(200, response2.code)
         }
         
         // Test that stop method works without throwing exceptions
