@@ -151,7 +151,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         
         // Configure static file serving for web interface
         if (Config.WEB_INTERFACE_ENABLED) {
-            config.staticFiles.add("/static", Location.CLASSPATH)
+            config.staticFiles.add { staticFiles ->
+                staticFiles.hostedPath = "/static"
+                staticFiles.directory = "/static"
+                staticFiles.location = Location.CLASSPATH
+            }
         }
     } ?: throw Error("Could not create Javalin app!")
 
@@ -380,7 +384,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val name = ctx.pathParam("name")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
-            blobStore.getBlob(imageVersion) { stream, handle ->
+            blobStore.getBlob(imageVersion) { stream, _ ->
                 ctx.result(stream)
                 ctx.status(200)
                 // Note: Handle is automatically closed by JDBI's useHandle method
@@ -460,30 +464,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Web interface endpoints
         if (Config.WEB_INTERFACE_ENABLED) {
-            // Serve static JavaScript file
-            app.get("/static/index.js") { ctx ->
-                try {
-                    val jsContent = File("src/main/resources/static/index.js").readText()
-                    ctx.contentType("application/javascript; charset=utf-8")
-                    ctx.result(jsContent)
-                } catch (e: Exception) {
-                    ctx.status(404)
-                    ctx.result("JavaScript file not found")
-                }
-            }
-            
-            // Serve source map file
-            app.get("/static/index.js.map") { ctx ->
-                try {
-                    val mapContent = File("src/main/resources/static/index.js.map").readText()
-                    ctx.contentType("application/json; charset=utf-8")
-                    ctx.result(mapContent)
-                } catch (e: Exception) {
-                    ctx.status(404)
-                    ctx.result("Source map file not found")
-                }
-            }
-            
             // Web interface login endpoint
             app.post("/api/web/login") { ctx ->
                 if (!Config.WEB_AUTH_ENABLED) {
