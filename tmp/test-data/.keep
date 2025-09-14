@@ -1,0 +1,2 @@
+# This file ensures the tmp/test-data directory is tracked by git
+# Test data directories will be created and cleaned up automatically during test runs

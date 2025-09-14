@@ -1,16 +1,35 @@
 import blobstore.Digest
 import blobstore.H2BlobStore
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import java.nio.file.Path
+import kotlin.test.assertTrue
 
 class SimpleMultiPartTest {
     
-    fun testMultiPartUpload() {
-        val testDatastorePath = Path.of("./test_data_simple")
+    private lateinit var blobStore: H2BlobStore
+    private lateinit var testDatastorePath: Path
+
+    @BeforeEach
+    fun setup() {
+        testDatastorePath = Path.of("./tmp/test-data/simple-multipart-test")
         if (testDatastorePath.toFile().exists()) {
             testDatastorePath.toFile().deleteRecursively()
         }
-        val blobStore = H2BlobStore(testDatastorePath)
-        
+        blobStore = H2BlobStore(testDatastorePath)
+    }
+
+    @AfterEach
+    fun cleanup() {
+        blobStore.cleanup()
+        if (testDatastorePath.toFile().exists()) {
+            testDatastorePath.toFile().deleteRecursively()
+        }
+    }
+    
+    @Test
+    fun testMultiPartUpload() {
         val session = SessionID("test-session")
         
         // Upload two chunks
@@ -28,11 +47,7 @@ class SimpleMultiPartTest {
         blobStore.associateBlobWithSession(session, digest)
         
         // Verify blob exists
-        if (blobStore.hasBlob(digest)) {
-            println("SUCCESS: Multi-part upload works!")
-        } else {
-            println("FAILED: Multi-part upload failed!")
-        }
+        assertTrue(blobStore.hasBlob(digest), "Multi-part upload should work")
     }
     
     private fun calculateSHA256(data: ByteArray): String {

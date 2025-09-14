@@ -10,6 +10,7 @@ import com.github.dockerjava.core.DockerClientImpl
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient
 import com.github.dockerjava.transport.DockerHttpClient
 import mu.KotlinLogging
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -18,7 +19,7 @@ import java.time.Duration
 
 class DockerIntegrationTest {
     companion object {
-        val testBlobStoreDirectory: Path = Path.of("/tmp/blobstore")
+        val testBlobStoreDirectory: Path = Path.of("./tmp/test-data/docker-integration-test")
 
         @JvmStatic
         @BeforeAll
@@ -29,6 +30,15 @@ class DockerIntegrationTest {
             }
             // recreate the test blobstore
             testBlobStoreDirectory.toFile().mkdirs()
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun cleanupTestBlobstore() {
+            // delete all contents of test blobstore after tests
+            if (testBlobStoreDirectory.toFile().exists()) {
+                testBlobStoreDirectory.toFile().deleteRecursively()
+            }
         }
     }
 

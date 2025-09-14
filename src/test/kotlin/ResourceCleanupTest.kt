@@ -1,19 +1,34 @@
 import blobstore.H2BlobStore
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.test.assertTrue
 
 class ResourceCleanupTest {
 
-    @Test
-    fun testResourceCleanup() {
-        val testDatastorePath = Path.of("./test_data_cleanup")
+    private lateinit var blobStore: H2BlobStore
+    private lateinit var testDatastorePath: Path
+
+    @BeforeEach
+    fun setup() {
+        testDatastorePath = Path.of("./tmp/test-data/resource-cleanup-test")
         if (testDatastorePath.toFile().exists()) {
             testDatastorePath.toFile().deleteRecursively()
         }
-        
-        val blobStore = H2BlobStore(testDatastorePath)
-        
+        blobStore = H2BlobStore(testDatastorePath)
+    }
+
+    @AfterEach
+    fun cleanup() {
+        blobStore.cleanup()
+        if (testDatastorePath.toFile().exists()) {
+            testDatastorePath.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testResourceCleanup() {
         // Test that we can perform operations
         val session = SessionID("test-cleanup")
         val testData = "Test data for cleanup"
@@ -29,13 +44,6 @@ class ResourceCleanupTest {
 
     @Test
     fun testMultipleOperationsWithoutLeaks() {
-        val testDatastorePath = Path.of("./test_data_no_leaks")
-        if (testDatastorePath.toFile().exists()) {
-            testDatastorePath.toFile().deleteRecursively()
-        }
-        
-        val blobStore = H2BlobStore(testDatastorePath)
-        
         // Perform multiple operations that previously had resource leaks
         repeat(10) { i ->
             val session = SessionID("test-session-$i")

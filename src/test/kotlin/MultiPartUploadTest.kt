@@ -1,6 +1,7 @@
 import blobstore.Digest
 import blobstore.H2BlobStore
 import blobstore.ImageVersion
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -11,15 +12,24 @@ import kotlin.test.assertTrue
 class MultiPartUploadTest {
 
     private lateinit var blobStore: H2BlobStore
+    private lateinit var testDatastorePath: Path
 
     @BeforeEach
     fun setup() {
-        val testDatastorePath = Path.of("./test_data_multipart")
+        testDatastorePath = Path.of("./tmp/test-data/multipart-upload-test")
         // delete the test datastore if it exists
         if (testDatastorePath.toFile().exists()) {
             testDatastorePath.toFile().deleteRecursively()
         }
         blobStore = H2BlobStore(testDatastorePath)
+    }
+
+    @AfterEach
+    fun cleanup() {
+        blobStore.cleanup()
+        if (testDatastorePath.toFile().exists()) {
+            testDatastorePath.toFile().deleteRecursively()
+        }
     }
 
     @Test
