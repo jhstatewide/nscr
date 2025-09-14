@@ -51,6 +51,7 @@ object Config {
     // Web interface configuration
     val WEB_INTERFACE_ENABLED: Boolean = System.getenv("NSCR_WEB_INTERFACE_ENABLED")?.toBoolean() ?: true
     val WEB_AUTH_ENABLED: Boolean = System.getenv("NSCR_WEB_AUTH_ENABLED")?.toBoolean() ?: false
+    val SHUTDOWN_ENDPOINT_ENABLED: Boolean = System.getenv("NSCR_SHUTDOWN_ENDPOINT_ENABLED")?.toBoolean() ?: true
     val WEB_AUTH_USERNAME: String? = System.getenv("NSCR_WEB_AUTH_USERNAME")
     val WEB_AUTH_PASSWORD: String? = System.getenv("NSCR_WEB_AUTH_PASSWORD")
 

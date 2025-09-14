@@ -183,6 +183,25 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
         
+        // Shutdown endpoint (only enabled if configured)
+        if (Config.SHUTDOWN_ENDPOINT_ENABLED) {
+            app.post("/api/shutdown") { ctx ->
+                logger.info { "Shutdown endpoint called" }
+                ctx.json(mapOf(
+                    "message" to "Server shutdown initiated",
+                    "timestamp" to System.currentTimeMillis()
+                ))
+                
+                // Shutdown in a separate thread to allow response to be sent
+                Thread {
+                    Thread.sleep(1000) // Give time for response to be sent
+                    logger.info { "Shutting down server..." }
+                    app.stop()
+                    System.exit(0)
+                }.start()
+            }
+        }
+        
         // Start cleanup task if blobstore supports it
         if (blobStore is H2BlobStore) {
             blobStore.startCleanupTask()

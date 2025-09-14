@@ -30,10 +30,31 @@ class RegistryWebInterface {
   private eventSource: EventSource | null = null;
   private logs: LogEntry[] = [];
   private maxLogs = 1000;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
+  private reconnectTimeout: number | null = null;
+  private isManualDisconnect = false;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
     this.initializeApp();
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      this.cleanup();
+    });
+  }
+
+  private cleanup() {
+    this.isManualDisconnect = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
   }
 
   private async initializeApp() {
@@ -243,11 +264,32 @@ class RegistryWebInterface {
           </div>
         </div>
       </div>
+      
+      <div class="row mt-3">
+        <div class="col-md-6">
+          <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+              <h5 class="mb-0"><i class="bi bi-power"></i> Server Control</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted">Shutdown the server (development/testing only).</p>
+              <button id="shutdown-btn" class="btn btn-danger">
+                <i class="bi bi-power"></i> Shutdown Server
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     `;
 
     // Setup garbage collection button
     document.getElementById('gc-btn')?.addEventListener('click', () => {
       this.runGarbageCollection();
+    });
+    
+    // Setup shutdown button
+    document.getElementById('shutdown-btn')?.addEventListener('click', () => {
+      this.shutdownServer();
     });
   }
 
@@ -285,6 +327,65 @@ class RegistryWebInterface {
     }
   }
 
+  private async shutdownServer() {
+    // Show confirmation dialog
+    const confirmed = confirm(
+      'Are you sure you want to shutdown the server?\n\n' +
+      'This will stop the NSCR registry server completely.\n' +
+      'This action cannot be undone.'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    const btn = document.getElementById('shutdown-btn') as HTMLButtonElement;
+    const originalText = btn.innerHTML;
+    
+    try {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Shutting down...';
+      
+      const response = await fetch('/api/shutdown', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) throw new Error('Shutdown request failed');
+      
+      const result = await response.json();
+      
+      this.showAlert(`
+        <strong>Server Shutdown Initiated!</strong><br>
+        ${result.message}<br>
+        <small class="text-muted">The server will shut down in a few seconds...</small>
+      `, 'warning');
+      
+      // Show countdown and redirect after a delay
+      let countdown = 5;
+      const countdownInterval = setInterval(() => {
+        this.showAlert(`
+          <strong>Server is shutting down...</strong><br>
+          Redirecting in ${countdown} seconds
+        `, 'warning');
+        countdown--;
+        
+        if (countdown < 0) {
+          clearInterval(countdownInterval);
+          // Try to redirect, but the server might already be down
+          window.location.href = '/';
+        }
+      }, 1000);
+      
+    } catch (error) {
+      this.showAlert(`Failed to shutdown server: ${error}`, 'danger');
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
+
   private loadLogs() {
     const container = document.getElementById('logs-container');
     if (!container) return;
@@ -292,9 +393,17 @@ class RegistryWebInterface {
     container.innerHTML = `
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-          <h5 class="mb-0">Live Logs</h5>
           <div class="d-flex align-items-center gap-2">
-            <span id="log-stream-status" class="badge bg-danger">Disconnected</span>
+            <h5 class="mb-0">Live Logs</h5>
+            <div id="live-indicator" class="live-indicator">
+              <span class="live-dot"></span>
+              <span class="live-text">LIVE</span>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span id="log-stream-status" class="badge bg-danger">
+              <i class="bi bi-wifi-off"></i> Disconnected
+            </span>
             <button id="start-logs-btn" class="btn btn-success btn-sm">
               <i class="bi bi-play"></i> Start
             </button>
@@ -309,7 +418,7 @@ class RegistryWebInterface {
         <div class="card-body p-0">
           <div id="log-container" class="log-viewer">
             <div class="text-center text-muted p-3">
-              Click "Start" to begin streaming logs
+              <i class="bi bi-arrow-clockwise"></i> Connecting to log stream...
             </div>
           </div>
         </div>
@@ -319,20 +428,24 @@ class RegistryWebInterface {
     // Setup event listeners
     document.getElementById('start-logs-btn')?.addEventListener('click', () => {
       this.startLogStreaming();
-      (document.getElementById('start-logs-btn') as HTMLButtonElement).disabled = true;
-      (document.getElementById('stop-logs-btn') as HTMLButtonElement).disabled = false;
+      this.updateButtonStates(true);
     });
 
     document.getElementById('stop-logs-btn')?.addEventListener('click', () => {
       this.stopLogStreaming();
-      (document.getElementById('start-logs-btn') as HTMLButtonElement).disabled = false;
-      (document.getElementById('stop-logs-btn') as HTMLButtonElement).disabled = true;
+      this.updateButtonStates(false);
     });
 
     document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
       this.logs = [];
       this.updateLogDisplay();
     });
+
+    // Auto-start log streaming when the page loads
+    setTimeout(() => {
+      this.startLogStreaming();
+      this.updateButtonStates(true);
+    }, 1000); // Small delay to ensure everything is loaded
   }
 
   private async loadRepositories() {
@@ -463,11 +576,15 @@ class RegistryWebInterface {
       this.stopLogStreaming();
     }
 
+    this.isManualDisconnect = false;
     this.eventSource = new EventSource('/api/logs/stream');
     
     this.eventSource.addEventListener('connected', (event) => {
       console.log('Connected to log stream');
+      this.reconnectAttempts = 0; // Reset attempts on successful connection
       this.updateLogStreamStatus(true);
+      this.updateLiveIndicator(true);
+      this.updateReconnectStatus('Connected');
     });
 
     this.eventSource.addEventListener('log', (event) => {
@@ -478,14 +595,28 @@ class RegistryWebInterface {
     this.eventSource.onerror = (error) => {
       console.error('Log stream error:', error);
       this.updateLogStreamStatus(false);
+      this.updateLiveIndicator(false);
+      
+      if (!this.isManualDisconnect) {
+        this.scheduleReconnect();
+      }
     };
   }
 
   private stopLogStreaming() {
+    this.isManualDisconnect = true;
+    
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
       this.updateLogStreamStatus(false);
+      this.updateLiveIndicator(false);
+      this.updateReconnectStatus('Disconnected');
     }
   }
 
@@ -544,8 +675,80 @@ class RegistryWebInterface {
   private updateLogStreamStatus(connected: boolean) {
     const statusElement = document.getElementById('log-stream-status');
     if (statusElement) {
-      statusElement.textContent = connected ? 'Connected' : 'Disconnected';
-      statusElement.className = connected ? 'badge bg-success' : 'badge bg-danger';
+      if (connected) {
+        statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
+        statusElement.className = 'badge bg-success';
+      } else {
+        statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
+        statusElement.className = 'badge bg-danger';
+      }
+    }
+  }
+
+  private updateLiveIndicator(live: boolean) {
+    const indicator = document.getElementById('live-indicator');
+    if (indicator) {
+      if (live) {
+        indicator.className = 'live-indicator live-active';
+      } else {
+        indicator.className = 'live-indicator live-inactive';
+      }
+    }
+  }
+
+  private updateButtonStates(streaming: boolean) {
+    const startBtn = document.getElementById('start-logs-btn') as HTMLButtonElement;
+    const stopBtn = document.getElementById('stop-logs-btn') as HTMLButtonElement;
+    
+    if (startBtn && stopBtn) {
+      startBtn.disabled = streaming;
+      stopBtn.disabled = !streaming;
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.isManualDisconnect) {
+      return; // Don't reconnect if manually disconnected
+    }
+
+    this.reconnectAttempts++;
+    
+    // Calculate delay: exponential backoff up to 5 minutes (300 seconds)
+    let delay: number;
+    if (this.reconnectAttempts <= this.maxReconnectAttempts) {
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s
+      delay = Math.min(Math.pow(2, this.reconnectAttempts - 1) * 1000, 300000);
+    } else {
+      // After max attempts, use 5-minute intervals
+      delay = 300000; // 5 minutes
+    }
+
+    const delaySeconds = Math.round(delay / 1000);
+    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delaySeconds} seconds`);
+    
+    this.updateReconnectStatus(`Reconnecting in ${delaySeconds}s (attempt ${this.reconnectAttempts})`);
+
+    this.reconnectTimeout = window.setTimeout(() => {
+      if (!this.isManualDisconnect) {
+        console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts})`);
+        this.startLogStreaming();
+      }
+    }, delay);
+  }
+
+  private updateReconnectStatus(message: string) {
+    const statusElement = document.getElementById('log-stream-status');
+    if (statusElement) {
+      if (message === 'Connected') {
+        statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
+        statusElement.className = 'badge bg-success';
+      } else if (message === 'Disconnected') {
+        statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
+        statusElement.className = 'badge bg-danger';
+      } else if (message.startsWith('Reconnecting')) {
+        statusElement.innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${message}`;
+        statusElement.className = 'badge bg-warning';
+      }
     }
   }
 }
