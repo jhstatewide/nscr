@@ -152,6 +152,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in removeBlob for ${digest.digestString}: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in removeBlob for ${digest.digestString}: ${e.message}", e)
+                throw e
             }
         }
     }
@@ -203,11 +206,14 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 } catch (e: java.sql.SQLException) {
                     logger.error("SQL error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
                     throw e
+                } catch (e: org.jdbi.v3.core.exceptions.DataAccessException) {
+                    logger.error("Data access error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
+                    throw e
                 } catch (e: NoSuchElementException) {
                     logger.error("Blob not found for session ${sessionID.id}: ${e.message}", e)
                     throw e
                 } catch (e: Exception) {
-                    logger.error("Error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
+                    logger.error("Unexpected error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
                     throw e
                 }
             }
@@ -315,6 +321,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in stitchMultiPartBlob for ${sessionID.id}: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in stitchMultiPartBlob for ${sessionID.id}: ${e.message}", e)
+                throw e
             }
         }
     }
@@ -343,6 +352,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 handle.commit()
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in addManifest for $image: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in addManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in addManifest for $image: ${e.message}", e)
@@ -379,6 +391,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in getManifest for $image: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in getManifest for $image: ${e.message}", e)
+                throw e
             }
         } ?: error("Cannot find manifest for $image!")
     }
@@ -395,6 +410,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                     }.first()
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in hasManifest for $image: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in hasManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in hasManifest for $image: ${e.message}", e)
@@ -420,6 +438,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in digestForManifest for $image: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in digestForManifest for $image: ${e.message}", e)
+                throw e
             }
         } ?: error("Cannot find manifest for $image!")
     }
@@ -433,6 +454,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 }.forEach { function(it) }
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in eachBlob: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in eachBlob: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in eachBlob: ${e.message}", e)
@@ -452,6 +476,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 handler(stream, handle)
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in getBlob for ${imageVersion.tag}: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in getBlob for ${imageVersion.tag}: ${e.message}", e)
                 throw e
             } catch (e: NoSuchElementException) {
                 logger.error("Blob not found for digest ${imageVersion.tag}: ${e.message}", e)
@@ -476,6 +503,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in countBlobs: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in countBlobs: ${e.message}", e)
+                throw e
             }
         }
     }
@@ -491,6 +521,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 handle.commit()
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in removeManifest for $image: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in removeManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in removeManifest for $image: ${e.message}", e)
@@ -511,6 +544,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
             } catch (e: Exception) {
                 logger.error("Error in listRepositories: ${e.message}", e)
                 throw e
+            } catch (e: Exception) {
+                logger.error("Error in listRepositories: ${e.message}", e)
+                throw e
             }
         }
     }
@@ -524,6 +560,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                     .list()
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in listTags for $repository: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in listTags for $repository: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in listTags for $repository: ${e.message}", e)
@@ -758,6 +797,9 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 )
             } catch (e: java.sql.SQLException) {
                 logger.error("SQL error in getGarbageCollectionStats: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in getGarbageCollectionStats: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in getGarbageCollectionStats: ${e.message}", e)
