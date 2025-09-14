@@ -30,6 +30,7 @@ The main command-line tool for managing your NSCR registry.
 - `list-tags <repo>` - List all tags for a repository
 - `delete-image <repo> <tag>` - Delete an image by repository and tag
 - `garbage-collect` - Run garbage collection to free space
+- `gc-stats` - Show garbage collection statistics
 - `blob-count` - Show current blob count
 - `status` - Show registry status
 
@@ -43,6 +44,9 @@ The main command-line tool for managing your NSCR registry.
 
 # Delete an image
 ./scripts/management/nscr delete-image debian bullseye-slim
+
+# Check garbage collection statistics
+./scripts/management/nscr gc-stats
 
 # Run garbage collection
 ./scripts/management/nscr garbage-collect

@@ -21,6 +21,7 @@ print_usage() {
     echo "  list-tags <repo>              List all tags for a repository"
     echo "  delete-image <repo> <tag>     Delete an image by repository and tag"
     echo "  garbage-collect               Run garbage collection to free space"
+    echo "  gc-stats                      Show garbage collection statistics"
     echo "  blob-count                    Show current blob count"
     echo "  status                        Show registry status"
     echo ""
@@ -83,6 +84,29 @@ garbage_collect() {
     echo "  Manifests removed: $manifests_removed"
 }
 
+gc_stats() {
+    echo -e "${BLUE}Garbage Collection Statistics:${NC}"
+    response=$(curl -s "http://${REGISTRY_URL}/api/garbage-collect/stats")
+    
+    total_blobs=$(echo "$response" | jq -r '.totalBlobs')
+    total_manifests=$(echo "$response" | jq -r '.totalManifests')
+    unreferenced_blobs=$(echo "$response" | jq -r '.unreferencedBlobs')
+    orphaned_manifests=$(echo "$response" | jq -r '.orphanedManifests')
+    estimated_space=$(echo "$response" | jq -r '.estimatedSpaceToFree')
+    
+    echo "  Total blobs: $total_blobs"
+    echo "  Total manifests: $total_manifests"
+    echo "  Unreferenced blobs: $unreferenced_blobs"
+    echo "  Orphaned manifests: $orphaned_manifests"
+    echo "  Estimated space to free: $estimated_space bytes"
+    
+    if [ "$unreferenced_blobs" -gt 0 ] || [ "$orphaned_manifests" -gt 0 ]; then
+        echo -e "${YELLOW}Warning: Garbage collection recommended!${NC}"
+    else
+        echo -e "${GREEN}Registry is clean - no garbage collection needed.${NC}"
+    fi
+}
+
 blob_count() {
     echo -e "${BLUE}Current blob count:${NC}"
     curl -s "http://${REGISTRY_URL}/api/blobs" | wc -l
@@ -121,6 +145,9 @@ case "$1" in
         ;;
     "garbage-collect")
         garbage_collect
+        ;;
+    "gc-stats")
+        gc_stats
         ;;
     "blob-count")
         blob_count

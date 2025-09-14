@@ -5,6 +5,9 @@ import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
+import com.google.gson.Gson
+import com.google.gson.JsonParser
+import manifests.Manifest
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
@@ -374,30 +377,105 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             var manifestsRemoved = 0
             
             try {
-                // For now, implement a simple garbage collection that removes blobs without digests
-                // (these are typically from failed uploads or incomplete sessions)
-                val unreferencedBlobs = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NULL")
-                    .map { rs, _ -> rs.getString("digest") }.list()
+                logger.info("Starting comprehensive garbage collection...")
                 
-                for (digest in unreferencedBlobs) {
-                    val blobSize = handle.createQuery("SELECT LENGTH(content) as size FROM blobs WHERE digest IS NULL LIMIT 1")
-                        .map { rs, _ -> rs.getLong("size") }.firstOrNull() ?: 0L
+                // Step 1: Remove blobs without digests (failed uploads)
+                val nullDigestBlobs = handle.createQuery("""
+                    SELECT digest, LENGTH(content) as size 
+                    FROM blobs 
+                    WHERE digest IS NULL
+                """).map { rs, _ ->
+                    Pair(rs.getString("digest"), rs.getLong("size"))
+                }.list()
+                
+                for ((digest, size) in nullDigestBlobs) {
+                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL LIMIT 1").execute()
+                    if (deleted > 0) {
+                        blobsRemoved++
+                        spaceFreed += size
+                        logger.debug("Removed blob with null digest (${size} bytes)")
+                    }
+                }
+                
+                // Step 2: Find all blob digests referenced by manifests
+                val referencedDigests = mutableSetOf<String>()
+                
+                val manifests = handle.createQuery("SELECT manifest FROM manifests")
+                    .map { rs, _ -> rs.getString("manifest") }
+                    .list()
+                
+                for (manifestJson in manifests) {
+                    try {
+                        val manifestDigests = extractBlobDigestsFromManifest(manifestJson)
+                        referencedDigests.addAll(manifestDigests)
+                    } catch (e: Exception) {
+                        logger.warn("Failed to parse manifest for garbage collection: ${e.message}")
+                    }
+                }
+                
+                logger.info("Found ${referencedDigests.size} referenced blob digests")
+                
+                // Step 3: Remove unreferenced blobs
+                val allBlobDigests = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NOT NULL")
+                    .map { rs, _ -> rs.getString("digest") }
+                    .list()
+                
+                val unreferencedDigests = allBlobDigests.filter { !referencedDigests.contains(it) }
+                
+                logger.info("Found ${unreferencedDigests.size} unreferenced blobs to remove")
+                
+                for (digest in unreferencedDigests) {
+                    val blobInfo = handle.createQuery("""
+                        SELECT LENGTH(content) as size 
+                        FROM blobs 
+                        WHERE digest = :digest
+                    """).bind("digest", digest)
+                        .map { rs, _ -> rs.getLong("size") }
+                        .firstOrNull()
                     
-                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL LIMIT 1")
+                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest = :digest")
+                        .bind("digest", digest)
+                        .execute()
+                    
+                    if (deleted > 0 && blobInfo != null) {
+                        blobsRemoved++
+                        spaceFreed += blobInfo
+                        logger.debug("Removed unreferenced blob $digest (${blobInfo} bytes)")
+                    }
+                }
+                
+                // Step 4: Remove orphaned manifests (manifests that reference non-existent blobs)
+                val orphanedManifests = handle.createQuery("""
+                    SELECT name, tag, digest 
+                    FROM manifests 
+                    WHERE digest NOT IN (
+                        SELECT DISTINCT digest 
+                        FROM blobs 
+                        WHERE digest IS NOT NULL
+                    )
+                """).map { rs, _ ->
+                    Triple(rs.getString("name"), rs.getString("tag"), rs.getString("digest"))
+                }.list()
+                
+                for ((name, tag, digest) in orphanedManifests) {
+                    val deleted = handle.createUpdate("""
+                        DELETE FROM manifests 
+                        WHERE name = :name AND tag = :tag
+                    """).bind("name", name)
+                        .bind("tag", tag)
                         .execute()
                     
                     if (deleted > 0) {
-                        blobsRemoved++
-                        spaceFreed += blobSize
-                        logger.info("Garbage collected unreferenced blob (${blobSize} bytes)")
+                        manifestsRemoved++
+                        logger.debug("Removed orphaned manifest $name:$tag (digest: $digest)")
                     }
                 }
                 
                 logger.info("Garbage collection completed: $blobsRemoved blobs removed, $spaceFreed bytes freed, $manifestsRemoved manifests removed")
                 
             } catch (e: Exception) {
-                logger.error("Error during garbage collection: ${e.message}")
-                // Return empty result on error
+                logger.error("Error during garbage collection: ${e.message}", e)
+                // Return partial results on error
             }
             
             GarbageCollectionResult(blobsRemoved, spaceFreed, manifestsRemoved)
@@ -415,6 +493,107 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
         }
         val digest = md.digest()
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Extract all blob digests referenced by a manifest
+     */
+    private fun extractBlobDigestsFromManifest(manifestJson: String): Set<String> {
+        val digests = mutableSetOf<String>()
+        
+        try {
+            val gson = Gson()
+            val manifest = gson.fromJson(manifestJson, Manifest::class.java)
+            
+            // Add config digest if present
+            manifest.config?.digest?.let { digest ->
+                digests.add(digest)
+            }
+            
+            // Add layer digests
+            manifest.layers?.forEach { layer ->
+                layer?.digest?.let { digest ->
+                    digests.add(digest)
+                }
+            }
+            
+        } catch (e: Exception) {
+            logger.warn("Failed to parse manifest JSON: ${e.message}")
+            // Fallback: try to extract digests using regex
+            val digestPattern = """"digest"\s*:\s*"([^"]+)"""".toRegex()
+            val matches = digestPattern.findAll(manifestJson)
+            matches.forEach { matchResult ->
+                val digest = matchResult.groupValues[1]
+                if (digest.startsWith("sha256:")) {
+                    digests.add(digest)
+                }
+            }
+        }
+        
+        return digests
+    }
+
+    override fun getGarbageCollectionStats(): GarbageCollectionStats {
+        return jdbi.withHandle<GarbageCollectionStats, Exception> { handle ->
+            // Get total counts
+            val totalBlobs = handle.createQuery("SELECT COUNT(*) FROM blobs WHERE digest IS NOT NULL")
+                .map { rs, _ -> rs.getLong(1) }.first()
+            
+            val totalManifests = handle.createQuery("SELECT COUNT(*) FROM manifests")
+                .map { rs, _ -> rs.getLong(1) }.first()
+            
+            // Find referenced digests
+            val referencedDigests = mutableSetOf<String>()
+            val manifests = handle.createQuery("SELECT manifest FROM manifests")
+                .map { rs, _ -> rs.getString("manifest") }
+                .list()
+            
+            for (manifestJson in manifests) {
+                try {
+                    val manifestDigests = extractBlobDigestsFromManifest(manifestJson)
+                    referencedDigests.addAll(manifestDigests)
+                } catch (e: Exception) {
+                    logger.debug("Failed to parse manifest for stats: ${e.message}")
+                }
+            }
+            
+            // Count unreferenced blobs
+            val allBlobDigests = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NOT NULL")
+                .map { rs, _ -> rs.getString("digest") }
+                .list()
+            
+            val unreferencedDigests = allBlobDigests.filter { !referencedDigests.contains(it) }
+            val unreferencedBlobs = unreferencedDigests.size.toLong()
+            
+            // Calculate estimated space to free
+            val estimatedSpaceToFree = if (unreferencedDigests.isNotEmpty()) {
+                val spaceQuery = unreferencedDigests.joinToString(",") { "'$it'" }
+                handle.createQuery("SELECT SUM(LENGTH(content)) FROM blobs WHERE digest IN ($spaceQuery)")
+                    .map { rs, _ -> rs.getLong(1) ?: 0L }
+                    .firstOrNull() ?: 0L
+            } else {
+                0L
+            }
+            
+            // Count orphaned manifests
+            val orphanedManifests = handle.createQuery("""
+                SELECT COUNT(*) 
+                FROM manifests 
+                WHERE digest NOT IN (
+                    SELECT DISTINCT digest 
+                    FROM blobs 
+                    WHERE digest IS NOT NULL
+                )
+            """).map { rs, _ -> rs.getLong(1) }.first()
+            
+            GarbageCollectionStats(
+                totalBlobs = totalBlobs,
+                totalManifests = totalManifests,
+                unreferencedBlobs = unreferencedBlobs,
+                orphanedManifests = orphanedManifests,
+                estimatedSpaceToFree = estimatedSpaceToFree
+            )
+        }
     }
 
     /**

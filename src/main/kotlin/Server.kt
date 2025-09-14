@@ -272,6 +272,21 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             ctx.json(response)
         }
 
+        // Garbage collection statistics endpoint
+        app.get("/api/garbage-collect/stats") { ctx ->
+            logger.info("Getting garbage collection statistics...")
+            val stats = blobStore.getGarbageCollectionStats()
+            val response = mapOf(
+                "totalBlobs" to stats.totalBlobs,
+                "totalManifests" to stats.totalManifests,
+                "unreferencedBlobs" to stats.unreferencedBlobs,
+                "orphanedManifests" to stats.orphanedManifests,
+                "estimatedSpaceToFree" to stats.estimatedSpaceToFree
+            )
+            ctx.contentType("application/json")
+            ctx.json(response)
+        }
+
     }
 
     // Helper functions for DRY code

@@ -16,6 +16,14 @@ data class GarbageCollectionResult(
     val manifestsRemoved: Int
 )
 
+data class GarbageCollectionStats(
+    val totalBlobs: Long,
+    val totalManifests: Long,
+    val unreferencedBlobs: Long,
+    val orphanedManifests: Long,
+    val estimatedSpaceToFree: Long
+)
+
 // This represents the abstract interface to the blobstore
 interface Blobstore {
     fun hasBlob(digest: Digest): Boolean
@@ -35,4 +43,5 @@ interface Blobstore {
     fun listTags(repository: String): List<String>
     fun garbageCollect(): GarbageCollectionResult
     fun blobCountForSession(sessionID: SessionID): Int
+    fun getGarbageCollectionStats(): GarbageCollectionStats
 }
