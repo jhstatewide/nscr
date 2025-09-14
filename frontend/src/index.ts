@@ -369,7 +369,7 @@ class RegistryWebInterface {
         </div>
         <div class="card-body">
           <div class="log-viewer" id="log-viewer">
-            <div class="text-muted text-center">Click "Start" to begin live log streaming...</div>
+            <div class="text-muted text-center">Connecting to live log stream...</div>
           </div>
         </div>
       </div>
@@ -411,6 +411,16 @@ class RegistryWebInterface {
         console.error('Error parsing log entry:', error);
       }
     };
+
+    // Listen for "log" events specifically
+    this.eventSource.addEventListener('log', (event) => {
+      try {
+        const logEntry: LogEntry = JSON.parse(event.data);
+        this.addLogEntry(logEntry);
+      } catch (error) {
+        console.error('Error parsing log entry:', error);
+      }
+    });
 
     this.eventSource.onerror = (error) => {
       console.error('Log stream error:', error);
@@ -481,7 +491,7 @@ class RegistryWebInterface {
     const logs = logsToDisplay || this.logs;
     
     if (logs.length === 0) {
-      logViewer.innerHTML = '<div class="text-muted text-center">No logs available</div>';
+      logViewer.innerHTML = '<div class="text-muted text-center">Connected - waiting for logs...</div>';
       return;
     }
 

@@ -27,6 +27,28 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
         }
         
         fun getClientCount(): Int = logClients.size
+        
+        fun broadcastLog(timestamp: Long, level: String, message: String, logger: String, thread: String) {
+            val logEntry = mapOf(
+                "timestamp" to timestamp,
+                "level" to level,
+                "message" to message,
+                "logger" to logger,
+                "thread" to thread
+            )
+            
+            // Broadcast to all connected clients
+            val iterator = logClients.iterator()
+            while (iterator.hasNext()) {
+                val client = iterator.next()
+                try {
+                    client.sendEvent("log", logEntry)
+                } catch (e: Exception) {
+                    // Remove disconnected clients
+                    iterator.remove()
+                }
+            }
+        }
     }
     
     override fun append(event: ILoggingEvent) {

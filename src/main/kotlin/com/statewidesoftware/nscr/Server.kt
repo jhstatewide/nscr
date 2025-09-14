@@ -171,6 +171,22 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 SseLogAppender.addClient(client)
                 client.sendEvent("connected", "Log stream started")
                 
+                // Send a welcome message after 3 seconds to show the user the connection is working
+                Thread {
+                    try {
+                        Thread.sleep(3000) // Wait 3 seconds
+                        SseLogAppender.broadcastLog(
+                            timestamp = System.currentTimeMillis(),
+                            level = "INFO",
+                            message = "Welcome to NSCR Registry! Live log streaming is now active.",
+                            logger = "com.statewidesoftware.nscr.Server",
+                            thread = "SSE-Welcome"
+                        )
+                    } catch (e: InterruptedException) {
+                        // Thread interrupted, connection likely closed
+                    }
+                }.start()
+                
                 // Keep the connection alive by not returning from this block
                 // The connection will stay open until the client disconnects
                 try {
