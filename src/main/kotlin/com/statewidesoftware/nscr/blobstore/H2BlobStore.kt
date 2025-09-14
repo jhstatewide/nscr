@@ -786,14 +786,17 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     }
                 }
                 
-                // Step 4: Remove orphaned manifests (manifests that reference non-existent blobs)
+                // Step 4: Remove truly orphaned manifests (manifests that reference blobs that never existed)
+                // We only remove manifests that reference blobs that were never properly stored,
+                // not blobs that were correctly identified as unreferenced and removed in Step 3
+                // 
+                // A manifest is truly orphaned if it references a blob digest that never existed in the blobs table
+                // This typically happens due to failed uploads or corrupted data
                 val orphanedManifests = handle.createQuery("""
-                    SELECT name, tag, digest 
-                    FROM manifests 
-                    WHERE digest NOT IN (
-                        SELECT DISTINCT digest 
-                        FROM blobs 
-                        WHERE digest IS NOT NULL
+                    SELECT m.name, m.tag, m.digest 
+                    FROM manifests m
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM blobs b WHERE b.digest = m.digest
                     )
                 """).map { rs, _ ->
                     Triple(rs.getString("name"), rs.getString("tag"), rs.getString("digest"))
@@ -809,7 +812,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     
                     if (deleted > 0) {
                         manifestsRemoved++
-                        logger.debug("Removed orphaned manifest $name:$tag (digest: $digest)")
+                        logger.debug("Removed truly orphaned manifest $name:$tag (digest: $digest)")
                     }
                 }
                 
