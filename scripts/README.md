@@ -98,6 +98,23 @@ Basic functionality verification test:
 ./scripts/tests/simple_test.sh
 ```
 
+### `tests/test_multipart.sh`
+
+Multi-part upload functionality test:
+- Builds the NSCR project
+- Starts the registry server
+- Pulls a large Ubuntu image from Docker Hub
+- Pushes it to the local NSCR registry (tests multi-part uploads)
+- Verifies the push was successful
+- Tests manifest and blob retrieval
+- Validates repository listing
+- Comprehensive test for large image handling
+
+**Usage:**
+```bash
+./scripts/tests/test_multipart.sh
+```
+
 ## Prerequisites
 
 All scripts require:

@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
+import java.security.MessageDigest
 import kotlin.Exception
 import kotlin.io.path.Path
 
@@ -44,8 +45,9 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     }
 
     @Throws(Exception::class)
-    private fun blobCountForSession(sessionID: SessionID): Int = jdbi.withHandle<Int, Exception> { handle ->
-        handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID")
+    override fun blobCountForSession(sessionID: SessionID): Int = jdbi.withHandle<Int, Exception> { handle ->
+        // Count only blobs without digests (chunk blobs), not the final stitched blob
+        handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID AND digest IS NULL")
             .bind("sessionID", sessionID.id).map { rs, _ -> rs.getInt("blobCount") }.first() ?: 0
     }
 
@@ -121,7 +123,101 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             }
             logger.info("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
         } else {
-            TODO("Not yet able to stitch multi-part uploads! BlobCount for ${sessionID.id} is $blobCount")
+            // Handle multi-part uploads by stitching chunks together
+            logger.info("Stitching $blobCount blob chunks for session ${sessionID.id}")
+            stitchMultiPartBlob(sessionID, digest)
+        }
+    }
+
+    @Throws(Exception::class)
+    private fun stitchMultiPartBlob(sessionID: SessionID, digest: Digest) {
+        jdbi.useTransaction<Exception> { handle ->
+            // Get all blob chunks for this session, ordered by blobNumber
+            val blobChunks = handle.createQuery("""
+                SELECT blobNumber, content 
+                FROM blobs 
+                WHERE sessionID = :sessionID 
+                ORDER BY blobNumber
+            """)
+                .bind("sessionID", sessionID.id)
+                .map { rs, _ ->
+                    Pair(rs.getInt("blobNumber"), rs.getBytes("content"))
+                }
+                .list()
+
+            if (blobChunks.isEmpty()) {
+                throw IllegalStateException("No blob chunks found for session ${sessionID.id}")
+            }
+
+            // Verify we have consecutive blob numbers starting from 0
+            val expectedNumbers = (0 until blobChunks.size).toList()
+            val actualNumbers = blobChunks.map { it.first }.sorted()
+            if (actualNumbers != expectedNumbers) {
+                throw IllegalStateException("Non-consecutive blob numbers for session ${sessionID.id}: expected $expectedNumbers, got $actualNumbers")
+            }
+
+            // Calculate total size
+            val totalSize = blobChunks.sumOf { it.second.size }
+            logger.info("Stitching ${blobChunks.size} chunks totaling $totalSize bytes for session ${sessionID.id}")
+
+            // Create a temporary file to hold the stitched blob
+            val tempFile = File.createTempFile("stitched_blob", "tmp")
+            try {
+                // Write all chunks to the temp file in order
+                tempFile.outputStream().use { outputStream ->
+                    blobChunks.forEach { (blobNumber, content) ->
+                        outputStream.write(content)
+                        logger.debug("Wrote chunk $blobNumber (${content.size} bytes) to stitched blob")
+                    }
+                }
+
+                // Verify the stitched blob size
+                val stitchedSize = tempFile.length()
+                if (stitchedSize != totalSize.toLong()) {
+                    throw IllegalStateException("Stitched blob size mismatch: expected $totalSize, got $stitchedSize")
+                }
+
+                // Calculate and verify the digest of the stitched blob
+                val calculatedDigest = calculateSHA256(tempFile)
+                val expectedDigest = if (digest.digestString.startsWith("sha256:")) {
+                    digest.digestString.substring(7) // Remove "sha256:" prefix
+                } else {
+                    digest.digestString
+                }
+                
+                if (calculatedDigest != expectedDigest) {
+                    throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
+                }
+                
+                logger.info("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
+
+                // Read the stitched blob and insert it as a new blob with the digest
+                val stitchedInputStream = tempFile.inputStream()
+                val insertStatement = handle.connection.prepareStatement(
+                    "INSERT INTO blobs(sessionID, blobNumber, digest, content) VALUES (?, ?, ?, ?)"
+                )
+                insertStatement.setString(1, sessionID.id)
+                insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
+                insertStatement.setString(3, digest.digestString)
+                insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
+                insertStatement.executeUpdate()
+
+                // Delete the original chunk blobs
+                val deleteStatement = handle.connection.prepareStatement(
+                    "DELETE FROM blobs WHERE sessionID = ? AND digest IS NULL"
+                )
+                deleteStatement.setString(1, sessionID.id)
+                val deletedChunks = deleteStatement.executeUpdate()
+
+                logger.info("Successfully stitched $deletedChunks chunks into final blob with digest ${digest.digestString}")
+                handle.commit()
+
+            } finally {
+                // Clean up temp file
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+            }
         }
     }
 
@@ -289,5 +385,18 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
             
             GarbageCollectionResult(blobsRemoved, spaceFreed, manifestsRemoved)
         }
+    }
+
+    private fun calculateSHA256(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { inputStream ->
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                md.update(buffer, 0, bytesRead)
+            }
+        }
+        val digest = md.digest()
+        return digest.joinToString("") { "%02x".format(it) }
     }
 }

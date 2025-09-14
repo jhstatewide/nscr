@@ -34,4 +34,5 @@ interface Blobstore {
     fun listRepositories(): List<String>
     fun listTags(repository: String): List<String>
     fun garbageCollect(): GarbageCollectionResult
+    fun blobCountForSession(sessionID: SessionID): Int
 }
