@@ -157,11 +157,30 @@ class RegistryWebInterface {
         </div>
       </nav>
       
-      <div class="container mt-4">
+      <div class="container mt-4 mb-5">
         <div id="dashboard-container"></div>
         <div id="repositories-container" class="mt-4"></div>
         <div id="logs-container" class="mt-4"></div>
       </div>
+      
+      <footer class="bg-light border-top mt-5 py-4">
+        <div class="container">
+          <div class="row">
+            <div class="col-md-6">
+              <h6 class="text-muted">NSCR Registry</h6>
+              <p class="text-muted small mb-0">Docker Registry Management Interface</p>
+            </div>
+            <div class="col-md-6 text-md-end">
+              <p class="text-muted small mb-0">
+                <span id="footer-status">Status: <span class="text-success">Online</span></span>
+              </p>
+              <p class="text-muted small mb-0">
+                <span id="footer-logs">Logs: <span class="text-muted">0 entries</span></span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </footer>
     `;
 
     this.loadDashboard();
@@ -387,6 +406,7 @@ class RegistryWebInterface {
     document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
       this.logs = [];
       this.updateLogDisplay();
+      this.updateFooterLogCount(0);
     });
 
     // Auto-start log streaming
@@ -492,11 +512,12 @@ class RegistryWebInterface {
     
     if (logs.length === 0) {
       logViewer.innerHTML = '<div class="text-muted text-center">Connected - waiting for logs...</div>';
+      this.updateFooterLogCount(0);
       return;
     }
 
-    const logsHtml = logs.map(log => `
-      <div class="log-entry">
+    const logsHtml = logs.map((log, index) => `
+      <div class="log-entry ${index === 0 ? 'newest-log' : ''}">
         <span class="log-timestamp">${new Date(log.timestamp).toLocaleString()}</span>
         <span class="log-level ${log.level}">${log.level}</span>
         <span class="log-logger">${this.escapeHtml(log.logger)}</span>
@@ -506,6 +527,9 @@ class RegistryWebInterface {
 
     logViewer.innerHTML = logsHtml;
     logViewer.scrollTop = 0; // Auto-scroll to top for newest logs
+    
+    // Update footer with log count
+    this.updateFooterLogCount(logs.length);
   }
 
   private updateLogStreamStatus(connected: boolean) {
@@ -519,6 +543,36 @@ class RegistryWebInterface {
       } else {
         liveDot.classList.remove('connected');
         liveText.textContent = 'OFFLINE';
+      }
+    }
+    
+    // Update footer status
+    this.updateFooterStatus(connected);
+  }
+
+  private updateFooterStatus(connected: boolean) {
+    const footerStatus = document.getElementById('footer-status');
+    if (footerStatus) {
+      const statusSpan = footerStatus.querySelector('span');
+      if (statusSpan) {
+        if (connected) {
+          statusSpan.textContent = 'Online';
+          statusSpan.className = 'text-success';
+        } else {
+          statusSpan.textContent = 'Offline';
+          statusSpan.className = 'text-danger';
+        }
+      }
+    }
+  }
+
+  private updateFooterLogCount(count: number) {
+    const footerLogs = document.getElementById('footer-logs');
+    if (footerLogs) {
+      const countSpan = footerLogs.querySelector('span');
+      if (countSpan) {
+        countSpan.textContent = `${count} entries`;
+        countSpan.className = count > 0 ? 'text-info' : 'text-muted';
       }
     }
   }

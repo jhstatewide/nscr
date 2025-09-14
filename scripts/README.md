@@ -8,9 +8,13 @@ This directory contains utility scripts for managing and testing the NSCR (New a
 scripts/
 ├── management/          # Management and operational scripts
 │   └── nscr            # Main registry management CLI tool
+├── populate/            # Registry population scripts
+│   ├── populate_registry.sh        # Full registry population with multiple images
+│   └── populate_registry_simple.sh # Simple population with essential images
 └── tests/              # Test and validation scripts
     ├── test_registry.sh    # Full registry functionality test
     ├── test_deletion.sh    # Image deletion and garbage collection test
+    ├── test_multipart.sh   # Multi-part upload functionality test
     └── simple_test.sh      # Basic functionality verification
 ```
 
@@ -54,6 +58,62 @@ The main command-line tool for managing your NSCR registry.
 # Check registry status
 ./scripts/management/nscr status
 ```
+
+## Populate Scripts
+
+These scripts help populate your NSCR registry with sample Docker images for testing and demonstration purposes.
+
+### `populate/populate_registry.sh`
+
+Comprehensive registry population script that pulls and pushes multiple popular small Docker images:
+- Alpine Linux (latest)
+- Hello World (latest)
+- Nginx (Alpine variant)
+- Redis (Alpine variant)
+- PostgreSQL (Alpine variant)
+- Node.js (Alpine variant)
+- Python (Alpine variant)
+- BusyBox (latest)
+- Apache HTTP Server (Alpine variant)
+- Memcached (Alpine variant)
+
+**Features:**
+- Colored output with status indicators
+- Registry connectivity checks
+- Automatic cleanup of local images after pushing
+- Registry status display at completion
+- Error handling and validation
+
+**Usage:**
+```bash
+./scripts/populate/populate_registry.sh
+```
+
+**Prerequisites:**
+- Docker must be running
+- NSCR registry must be running on `localhost:7000`
+- `jq` (optional, for formatted JSON output)
+
+### `populate/populate_registry_simple.sh`
+
+Lightweight registry population script that pulls and pushes just a few essential images:
+- Alpine Linux (latest)
+- Hello World (latest)
+- Nginx (Alpine variant)
+
+**Features:**
+- Minimal dependencies
+- Quick execution
+- Perfect for basic testing
+
+**Usage:**
+```bash
+./scripts/populate/populate_registry_simple.sh
+```
+
+**Prerequisites:**
+- Docker must be running
+- NSCR registry must be running on `localhost:7000`
 
 ## Test Scripts
 
