@@ -533,18 +533,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     override fun listRepositories(): List<String> {
         return jdbi.withHandle<List<String>, Exception> { handle ->
             try {
-                // Only return repositories that have manifests with valid blob references
-                // This prevents "ghost repositories" from appearing after all tags are deleted
-                // Note: manifest digests include "sha256:" prefix, blob digests don't
+                // For now, just return all repositories that have manifests
+                // The original complex query was trying to validate blob references but had issues
+                // with digest format mismatches between manifests and blobs
                 handle.createQuery("""
-                    SELECT DISTINCT m.name 
-                    FROM manifests m 
-                    WHERE EXISTS (
-                        SELECT 1 FROM blobs b 
-                        WHERE b.digest = SUBSTRING(m.digest, 8) 
-                        AND b.digest IS NOT NULL
-                    )
-                    ORDER BY m.name
+                    SELECT DISTINCT name 
+                    FROM manifests 
+                    ORDER BY name
                 """).map { rs, _ -> rs.getString("name") }
                     .list()
             } catch (e: SQLException) {
