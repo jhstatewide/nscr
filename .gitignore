@@ -3,3 +3,4 @@ build/
 .idea/
 /data
 /test_data
+bin/
