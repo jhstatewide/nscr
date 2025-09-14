@@ -7,6 +7,7 @@ plugins {
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.github.ben-manes.versions") version "0.52.0"
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
+    id("com.github.node-gradle.node") version "5.0.0"
 }
 
 group = "com.statewidesoftware"
@@ -84,4 +85,48 @@ tasks.detekt {
         txt.required.set(false)
         sarif.required.set(false)
     }
+}
+
+// Node.js configuration
+node {
+    version.set("20.11.0")
+    yarnVersion.set("1.22.19")
+    download.set(true)
+}
+
+// Frontend build task
+tasks.register<Exec>("buildFrontend") {
+    group = "frontend"
+    description = "Build frontend assets with esbuild"
+    dependsOn("yarn_install")
+    workingDir = file("frontend")
+    commandLine("yarn", "build")
+}
+
+// Copy frontend assets to resources
+tasks.register<Copy>("copyFrontendAssets") {
+    group = "frontend"
+    description = "Copy built frontend assets to resources"
+    from("frontend/dist")
+    into("src/main/resources/static")
+    dependsOn("buildFrontend")
+}
+
+// Make processResources depend on copyFrontendAssets
+tasks.named("processResources") {
+    dependsOn("copyFrontendAssets")
+}
+
+// Make frontend build part of main build
+tasks.named("build") {
+    dependsOn("copyFrontendAssets")
+}
+
+// Development task for frontend
+tasks.register<Exec>("devFrontend") {
+    group = "frontend"
+    description = "Start frontend development server"
+    dependsOn("yarn_install")
+    workingDir = file("frontend")
+    commandLine("yarn", "dev")
 }

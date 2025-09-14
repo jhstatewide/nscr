@@ -48,6 +48,12 @@ object Config {
     val MAX_UPLOAD_SIZE_MB: Long = System.getenv("NSCR_MAX_UPLOAD_SIZE_MB")?.toLongOrNull() ?: 1024L // 1GB default
     val CHUNK_SIZE_MB: Int = System.getenv("NSCR_CHUNK_SIZE_MB")?.toIntOrNull() ?: 10 // 10MB chunks
 
+    // Web interface configuration
+    val WEB_INTERFACE_ENABLED: Boolean = System.getenv("NSCR_WEB_INTERFACE_ENABLED")?.toBoolean() ?: true
+    val WEB_AUTH_ENABLED: Boolean = System.getenv("NSCR_WEB_AUTH_ENABLED")?.toBoolean() ?: false
+    val WEB_AUTH_USERNAME: String? = System.getenv("NSCR_WEB_AUTH_USERNAME")
+    val WEB_AUTH_PASSWORD: String? = System.getenv("NSCR_WEB_AUTH_PASSWORD")
+
     /**
      * Print current configuration (excluding sensitive values)
      */
@@ -74,6 +80,14 @@ object Config {
         println("Cleanup Min Free Space (%): $CLEANUP_MIN_FREE_SPACE_PERCENT")
         println("Max Upload Size (MB): $MAX_UPLOAD_SIZE_MB")
         println("Chunk Size (MB): $CHUNK_SIZE_MB")
+        println("Web Interface Enabled: $WEB_INTERFACE_ENABLED")
+        if (WEB_INTERFACE_ENABLED) {
+            println("Web Auth Enabled: $WEB_AUTH_ENABLED")
+            if (WEB_AUTH_ENABLED) {
+                println("Web Auth Username: ${WEB_AUTH_USERNAME ?: "NOT SET"}")
+                println("Web Auth Password: ${if (WEB_AUTH_PASSWORD != null) "***SET***" else "NOT SET"}")
+            }
+        }
         println("=========================")
     }
 
@@ -134,6 +148,16 @@ object Config {
             }
             if (AUTH_PASSWORD.isNullOrBlank()) {
                 errors.add("Authentication is enabled but NSCR_AUTH_PASSWORD is not set")
+            }
+        }
+
+        // Validate web interface authentication configuration
+        if (WEB_INTERFACE_ENABLED && WEB_AUTH_ENABLED) {
+            if (WEB_AUTH_USERNAME.isNullOrBlank()) {
+                errors.add("Web interface authentication is enabled but NSCR_WEB_AUTH_USERNAME is not set")
+            }
+            if (WEB_AUTH_PASSWORD.isNullOrBlank()) {
+                errors.add("Web interface authentication is enabled but NSCR_WEB_AUTH_PASSWORD is not set")
             }
         }
 

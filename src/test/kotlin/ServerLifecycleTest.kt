@@ -20,7 +20,9 @@ class ServerLifecycleTest {
         JavalinTest.test(javalinApp) { _, client ->
             // Test basic functionality
             val response1 = client.get("/")
-            assertEquals("Hello World", response1.body?.string())
+            val body = response1.body?.string()
+            // Should return HTML content (web interface) or "Hello World" if web interface disabled
+            assertTrue(body?.contains("<!DOCTYPE html>") == true || body == "Hello World")
             
             // Test registry API
             val response2 = client.get("/v2")

@@ -6,13 +6,42 @@ import com.statewidesoftware.nscr.blobstore.H2BlobStore
 import com.statewidesoftware.nscr.blobstore.ImageVersion
 import io.javalin.Javalin
 import io.javalin.http.Context
+import io.javalin.http.staticfiles.Location
 import mu.KLogger
 import mu.KotlinLogging
 import java.security.MessageDigest
+import java.io.File
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 
+
+/**
+ * Web interface authentication helper function
+ * This provides authentication specifically for the web interface
+ */
+fun Context.requireWebAuth() {
+    if (!Config.WEB_INTERFACE_ENABLED || !Config.WEB_AUTH_ENABLED) {
+        return // No web auth required
+    }
+    
+    val authHeader = this.header("Authorization")
+    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        this.status(401)
+        this.json(mapOf("error" to "Web interface authentication required"))
+        return
+    }
+    
+    // For now, we'll use a simple token validation
+    // In production, you might want to use JWT or session management
+    val token = authHeader.substring(7)
+    // Simple validation - in production, implement proper token validation
+    if (token != "web-token-${Config.WEB_AUTH_USERNAME}") {
+        this.status(401)
+        this.json(mapOf("error" to "Invalid web interface token"))
+        return
+    }
+}
 
 /**
  * HTTP Basic Authentication helper function
@@ -119,6 +148,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     val sessionTracker = SessionTracker()
     val app: Javalin = Javalin.create { config ->
         config.showJavalinBanner = false
+        
+        // Configure static file serving for web interface
+        if (Config.WEB_INTERFACE_ENABLED) {
+            config.staticFiles.add("/static", Location.CLASSPATH)
+        }
     } ?: throw Error("Could not create Javalin app!")
 
     init {
@@ -189,7 +223,12 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         app.get("/") { ctx ->
             logger.debug("Got a request to URL: ${ctx.url()}")
-            ctx.result("Hello World")
+            if (Config.WEB_INTERFACE_ENABLED) {
+                // Serve the web interface
+                ctx.html(File("src/main/resources/static/index.html").readText())
+            } else {
+                ctx.result("Hello World")
+            }
         }
 
         app.get("/v2") { ctx ->
@@ -417,6 +456,79 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             )
             ctx.contentType("application/json")
             ctx.json(response)
+        }
+
+        // Web interface endpoints
+        if (Config.WEB_INTERFACE_ENABLED) {
+            // Serve static JavaScript file
+            app.get("/static/index.js") { ctx ->
+                try {
+                    val jsContent = File("src/main/resources/static/index.js").readText()
+                    ctx.contentType("application/javascript; charset=utf-8")
+                    ctx.result(jsContent)
+                } catch (e: Exception) {
+                    ctx.status(404)
+                    ctx.result("JavaScript file not found")
+                }
+            }
+            
+            // Serve source map file
+            app.get("/static/index.js.map") { ctx ->
+                try {
+                    val mapContent = File("src/main/resources/static/index.js.map").readText()
+                    ctx.contentType("application/json; charset=utf-8")
+                    ctx.result(mapContent)
+                } catch (e: Exception) {
+                    ctx.status(404)
+                    ctx.result("Source map file not found")
+                }
+            }
+            
+            // Web interface login endpoint
+            app.post("/api/web/login") { ctx ->
+                if (!Config.WEB_AUTH_ENABLED) {
+                    ctx.json(mapOf("success" to true, "message" to "No authentication required"))
+                    return@post
+                }
+                
+                val body = ctx.body()
+                // Simple JSON parsing for username/password
+                val usernameMatch = Regex("\"username\"\\s*:\\s*\"([^\"]+)\"").find(body)
+                val passwordMatch = Regex("\"password\"\\s*:\\s*\"([^\"]+)\"").find(body)
+                val username = usernameMatch?.groupValues?.get(1)
+                val password = passwordMatch?.groupValues?.get(1)
+                
+                if (username == Config.WEB_AUTH_USERNAME && password == Config.WEB_AUTH_PASSWORD) {
+                    val token = "web-token-$username"
+                    ctx.json(mapOf(
+                        "success" to true,
+                        "token" to token,
+                        "user" to mapOf("username" to username)
+                    ))
+                } else {
+                    ctx.status(401)
+                    ctx.json(mapOf("success" to false, "message" to "Invalid credentials"))
+                }
+            }
+
+            // Web interface status endpoint
+            app.get("/api/web/status") { ctx ->
+                ctx.requireWebAuth()
+                
+                val repositories = blobStore.listRepositories()
+                val stats = blobStore.getGarbageCollectionStats()
+                
+                val response = mapOf(
+                    "repositories" to repositories.size,
+                    "totalBlobs" to stats.totalBlobs,
+                    "totalManifests" to stats.totalManifests,
+                    "unreferencedBlobs" to stats.unreferencedBlobs,
+                    "estimatedSpaceToFree" to stats.estimatedSpaceToFree,
+                    "lastGcRun" to "2024-01-01T00:00:00Z" // You'd track this in production
+                )
+                
+                ctx.json(response)
+            }
         }
 
     }

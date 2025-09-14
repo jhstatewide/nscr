@@ -45,3 +45,4 @@ docker/data/
 # JVM
 hs_err_pid*
 .aider*
+src/main/resources/static/

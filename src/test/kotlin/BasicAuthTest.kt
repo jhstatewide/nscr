@@ -5,6 +5,7 @@ import io.javalin.testtools.JavalinTest
 import mu.KotlinLogging
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import java.util.Base64
 
 class BasicAuthTest {
@@ -84,7 +85,9 @@ class BasicAuthTest {
             // Root endpoint should be accessible without auth
             val response = client.get("/")
             assertEquals(200, response.code)
-            assertEquals("Hello World", response.body?.string())
+            val body = response.body?.string()
+            // Should return HTML content (web interface) or "Hello World" if web interface disabled
+            assertTrue(body?.contains("<!DOCTYPE html>") == true || body == "Hello World")
         }
         
         app.stop()

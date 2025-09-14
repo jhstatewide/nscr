@@ -6,6 +6,7 @@ import io.mockk.mockk
 import mu.KotlinLogging
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ImagePushIntegrationTest {
 
@@ -22,7 +23,9 @@ class ImagePushIntegrationTest {
     fun testHelloWorld() {
         JavalinTest.test(javalinApp) { _, client ->
             val response = client.get("/")
-            assertEquals("Hello World", response.body?.string())
+            val body = response.body?.string()
+            // Should return HTML content (web interface) or "Hello World" if web interface disabled
+            assertTrue(body?.contains("<!DOCTYPE html>") == true || body == "Hello World")
         }
     }
 
