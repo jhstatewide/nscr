@@ -25,7 +25,12 @@ object Config {
     // Registry configuration
     val REGISTRY_URL: String = System.getenv("NSCR_REGISTRY_URL") ?: "http://localhost:${SERVER_PORT}"
 
-    // Authentication configuration (for future use)
+    // Authentication configuration
+    val AUTH_ENABLED: Boolean get() = (System.getenv("NSCR_AUTH_ENABLED") ?: System.getProperty("NSCR_AUTH_ENABLED"))?.toBoolean() ?: false
+    val AUTH_USERNAME: String? get() = System.getenv("NSCR_AUTH_USERNAME") ?: System.getProperty("NSCR_AUTH_USERNAME")
+    val AUTH_PASSWORD: String? get() = System.getenv("NSCR_AUTH_PASSWORD") ?: System.getProperty("NSCR_AUTH_PASSWORD")
+    
+    // JWT configuration (for future use)
     val JWT_SECRET: String = System.getenv("NSCR_JWT_SECRET") ?: "default-secret-key-change-in-production"
     val TOKEN_EXPIRY: Int = System.getenv("NSCR_TOKEN_EXPIRY")?.toIntOrNull() ?: 3600
 
@@ -56,6 +61,11 @@ object Config {
         println("Server Host: $SERVER_HOST")
         println("Log Level: $LOG_LEVEL")
         println("Registry URL: $REGISTRY_URL")
+        println("Authentication Enabled: $AUTH_ENABLED")
+        if (AUTH_ENABLED) {
+            println("Auth Username: ${AUTH_USERNAME ?: "NOT SET"}")
+            println("Auth Password: ${if (AUTH_PASSWORD != null) "***SET***" else "NOT SET"}")
+        }
         println("Garbage Collection Enabled: $GC_ENABLED")
         println("GC Interval (hours): $GC_INTERVAL_HOURS")
         println("Cleanup Enabled: $CLEANUP_ENABLED")
@@ -115,6 +125,16 @@ object Config {
 
         if (CLEANUP_MIN_FREE_SPACE_PERCENT < 0.0 || CLEANUP_MIN_FREE_SPACE_PERCENT > 100.0) {
             errors.add("Invalid cleanup min free space: $CLEANUP_MIN_FREE_SPACE_PERCENT% (must be 0-100)")
+        }
+
+        // Validate authentication configuration
+        if (AUTH_ENABLED) {
+            if (AUTH_USERNAME.isNullOrBlank()) {
+                errors.add("Authentication is enabled but NSCR_AUTH_USERNAME is not set")
+            }
+            if (AUTH_PASSWORD.isNullOrBlank()) {
+                errors.add("Authentication is enabled but NSCR_AUTH_PASSWORD is not set")
+            }
         }
 
         return errors

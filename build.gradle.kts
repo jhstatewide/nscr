@@ -12,6 +12,10 @@ plugins {
 group = "com.statewidesoftware"
 version = "1.0-SNAPSHOT"
 
+application {
+    mainClass.set("com.statewidesoftware.nscr.ServerKt")
+}
+
 repositories {
     mavenCentral()
 }
@@ -63,16 +67,6 @@ idea {
 val compileKotlin: KotlinCompile by tasks
 compileKotlin.compilerOptions {
     freeCompilerArgs.add("-Xinline-classes")
-}
-
-application {
-    mainClass.set("ServerKt")
-}
-
-tasks.jar {
-    manifest {
-        attributes["Main-Class"] = "ServerKt"
-    }
 }
 
 // Detekt configuration

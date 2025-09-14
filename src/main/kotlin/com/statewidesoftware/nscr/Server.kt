@@ -5,12 +5,61 @@ import com.statewidesoftware.nscr.blobstore.Digest
 import com.statewidesoftware.nscr.blobstore.H2BlobStore
 import com.statewidesoftware.nscr.blobstore.ImageVersion
 import io.javalin.Javalin
+import io.javalin.http.Context
 import mu.KLogger
 import mu.KotlinLogging
 import java.security.MessageDigest
+import java.util.Base64
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
+
+/**
+ * HTTP Basic Authentication handler
+ */
+fun handleBasicAuth(ctx: Context) {
+    if (!Config.AUTH_ENABLED) {
+        return // No auth required
+    }
+    
+    val authHeader = ctx.header("Authorization")
+    if (authHeader == null || !authHeader.startsWith("Basic ")) {
+        ctx.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+        ctx.status(401)
+        ctx.result("Authentication required")
+        return
+    }
+    
+    try {
+        val encoded = authHeader.substring(6) // Remove "Basic " prefix
+        val decoded = String(Base64.getDecoder().decode(encoded))
+        val parts = decoded.split(":", limit = 2)
+        
+        if (parts.size != 2) {
+            ctx.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+            ctx.status(401)
+            ctx.result("Invalid authentication format")
+            return
+        }
+        
+        val username = parts[0]
+        val password = parts[1]
+        
+        if (username != Config.AUTH_USERNAME || password != Config.AUTH_PASSWORD) {
+            ctx.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+            ctx.status(401)
+            ctx.result("Invalid credentials")
+            return
+        }
+        
+        // Authentication successful, continue
+    } catch (e: Exception) {
+        ctx.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+        ctx.status(401)
+        ctx.result("Authentication error")
+        return
+    }
+}
 
 /**
  * Configure logging levels based on environment configuration
@@ -124,11 +173,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         app.get("/v2") { ctx ->
             logger.info { "Access GET /v2" }
+            handleBasicAuth(ctx)
             ctx.header("Docker-Distribution-API-Version", "registry/2.0")
             ctx.result("200 OK")
         }
 
         app.head("/v2/{image}/blobs/{digest}") { ctx ->
+            handleBasicAuth(ctx)
             val image = ctx.pathParam("image")
             val digest = Digest(ctx.pathParam("digest"))
             logger.debug("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
@@ -136,6 +187,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         app.head("/v2/{name}/manifests/{tag}") { ctx ->
+            handleBasicAuth(ctx)
             val name = ctx.pathParam("name")
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
@@ -144,6 +196,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         app.get("/v2/{name}/manifests/{tag}") { ctx ->
+            handleBasicAuth(ctx)
             val name = ctx.pathParam("name")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
@@ -173,6 +226,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         app.post("/v2/{image}/blobs/uploads") { ctx ->
+            handleBasicAuth(ctx)
             logger.debug("Got a post to UPLOADS!")
             // see if we have the query param 'digest',
             // as in /v2/test/blobs/uploads?digest=sha256:1234
@@ -259,6 +313,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         app.get("/api/blobs") { ctx ->
+            handleBasicAuth(ctx)
             val blobList = StringBuilder()
             blobStore.eachBlob { blobRow ->
                 blobList.append(blobRow.digest)
@@ -305,6 +360,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // List repositories
         app.get("/v2/_catalog") { ctx ->
+            handleBasicAuth(ctx)
             val repositories = blobStore.listRepositories()
             val response = mapOf("repositories" to repositories)
             ctx.json(response)
@@ -323,6 +379,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Garbage collection endpoint
         app.post("/api/garbage-collect") { ctx ->
+            handleBasicAuth(ctx)
             logger.info("Starting garbage collection...")
             val result = blobStore.garbageCollect()
             val response = mapOf(

@@ -39,6 +39,9 @@ META-INF/
 /test_data
 bin/
 
+# Docker data
+docker/data/
+
 # JVM
 hs_err_pid*
 .aider*
