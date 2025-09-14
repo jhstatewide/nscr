@@ -1,3 +1,4 @@
+import com.statewidesoftware.nscr.RegistryServerApp
 import io.javalin.testtools.JavalinTest
 import mu.KotlinLogging
 import kotlin.test.Test
@@ -12,7 +13,7 @@ class ServerLifecycleTest {
         val app = RegistryServerApp(logger)
         
         // Test that the server can be created and started
-        val javalinApp = app.javalinApp()
+        val javalinApp = app.app
         assertTrue(javalinApp != null, "Javalin app should be created")
         
         // Test basic functionality and registry API

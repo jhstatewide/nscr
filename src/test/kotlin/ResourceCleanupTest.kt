@@ -1,4 +1,5 @@
-import blobstore.H2BlobStore
+import com.statewidesoftware.nscr.SessionID
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

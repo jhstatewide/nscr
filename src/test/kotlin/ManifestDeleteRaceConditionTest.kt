@@ -1,13 +1,15 @@
 package blobstore
 
-import SessionID
+import com.statewidesoftware.nscr.SessionID
+import com.statewidesoftware.nscr.blobstore.Digest
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
+import com.statewidesoftware.nscr.blobstore.ImageVersion
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import java.nio.file.Path
 import java.nio.file.Files
-import kotlin.io.path.Path
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch

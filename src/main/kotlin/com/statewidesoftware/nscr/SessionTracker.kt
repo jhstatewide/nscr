@@ -1,3 +1,5 @@
+package com.statewidesoftware.nscr
+
 import java.util.*
 
 @JvmInline

@@ -1,4 +1,5 @@
-import blobstore.Blobstore
+import com.statewidesoftware.nscr.RegistryServerApp
+import com.statewidesoftware.nscr.blobstore.Blobstore
 import io.javalin.testtools.JavalinTest
 import io.mockk.every
 import io.mockk.mockk
@@ -15,7 +16,7 @@ class ImagePushIntegrationTest {
         every { mockBlobStore.addBlob(any(), any(), any()) } returns 202
     }
 
-    private val javalinApp = RegistryServerApp(logger = klogger, mockBlobStore).javalinApp()
+    private val javalinApp = RegistryServerApp(logger = klogger, mockBlobStore).app
 
     @Test
     fun testHelloWorld() {

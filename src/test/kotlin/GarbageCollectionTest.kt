@@ -1,7 +1,7 @@
-import blobstore.Digest
-import blobstore.GarbageCollectionStats
-import blobstore.H2BlobStore
-import blobstore.ImageVersion
+import com.statewidesoftware.nscr.SessionID
+import com.statewidesoftware.nscr.blobstore.Digest
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
+import com.statewidesoftware.nscr.blobstore.ImageVersion
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

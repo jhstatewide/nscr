@@ -1,14 +1,13 @@
-package blobstore
+package com.statewidesoftware.nscr.blobstore
 
-import SessionID
-import nscr.Config
+import com.statewidesoftware.nscr.SessionID
+import com.statewidesoftware.nscr.Config
 import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
 import org.slf4j.LoggerFactory
 import com.google.gson.Gson
-import com.google.gson.JsonParser
-import manifests.Manifest
+import com.statewidesoftware.nscr.manifests.Manifest
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
@@ -17,8 +16,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.Exception
-import kotlin.io.path.Path
-import java.nio.file.FileStore
+import java.nio.file.Files
+import java.sql.SQLException
 
 /**
  * Result of incomplete upload cleanup operation
@@ -81,7 +80,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             // Count only blobs without digests (chunk blobs), not the final stitched blob
             handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID AND digest IS NULL")
                 .bind("sessionID", sessionID.id).map { rs, _ -> rs.getInt("blobCount") }.first() ?: 0
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in blobCountForSession for ${sessionID.id}: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -99,7 +98,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 statement.map { rs, _ ->
                     rs.getInt("matching_blob_count") > 0
                 }.first()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in hasBlob for ${digest.digestString}: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -113,7 +112,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     override fun addBlob(sessionID: SessionID, blobNumber: Int?, bodyAsInputStream: InputStream): Long {
         // we cannot go over the input stream twice...
         // so we need to copy it to a temp file
-        val tempFile = File.createTempFile("blobstore", "blob")
+        val tempFile = File.createTempFile("com/statewidesoftware/nscr/blobstore", "blob")
         try {
             bodyAsInputStream.use {
                 it.copyTo(tempFile.outputStream())
@@ -157,7 +156,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .execute()
                 logger.info("Removed blob with digest ${digest.digestString}, deleted $deletedRows rows")
                 handle.commit()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in removeBlob for ${digest.digestString}: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -211,7 +210,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                             tempFile.delete()
                         }
                     }
-                } catch (e: java.sql.SQLException) {
+                } catch (e: SQLException) {
                     logger.error("SQL error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
                     throw e
                 } catch (e: NoSuchElementException) {
@@ -320,7 +319,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         tempFile.delete()
                     }
                 }
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in stitchMultiPartBlob for ${sessionID.id}: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -352,7 +351,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .execute()
                 logger.debug("Manifest added for $image with digest: sha256:${digest.digestString}")
                 handle.commit()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in addManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -384,7 +383,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                             rs.getString("manifest")
                         }.firstOrNull()
                 }
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in getManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -404,7 +403,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .map { rs, _ ->
                         rs.getInt("count")
                     }.first()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in hasManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -425,7 +424,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .map { rs, _ ->
                         Digest(rs.getString("digest"))
                     }.firstOrNull()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in digestForManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -442,7 +441,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 handle.createQuery("SELECT * FROM BLOBS").map { rs, _ ->
                     BlobRow.fromResultSet(rs)
                 }.forEach { function(it) }
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in eachBlob: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -461,7 +460,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         rs.getBinaryStream("content")
                     }.first()
                 handler(stream, handle)
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in getBlob for ${imageVersion.tag}: ${e.message}", e)
                 throw e
             } catch (e: NoSuchElementException) {
@@ -481,7 +480,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .map { rs, _ ->
                         rs.getLong("count")
                     }.first()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in countBlobs: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -500,7 +499,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .execute()
                 logger.info("Removed manifest for $image, deleted $deletedRows rows")
                 handle.commit()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in removeManifest for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -521,7 +520,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 val wasDeleted = deletedRows > 0
                 logger.info("Attempted to remove manifest for $image, deleted $deletedRows rows (existed: $wasDeleted)")
                 wasDeleted
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in removeManifestIfExists for $image: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -548,7 +547,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     ORDER BY m.name
                 """).map { rs, _ -> rs.getString("name") }
                     .list()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in listRepositories: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -565,7 +564,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("name", repository)
                     .map { rs, _ -> rs.getString("tag") }
                     .list()
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in listTags for $repository: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
@@ -580,7 +579,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
      */
     private fun isDiskSpaceLow(): Boolean {
         return try {
-            val fileStore = java.nio.file.Files.getFileStore(dataDirectory)
+            val fileStore = Files.getFileStore(dataDirectory)
             val totalSpace = fileStore.totalSpace
             val freeSpace = fileStore.usableSpace
             val freeSpacePercent = (freeSpace.toDouble() / totalSpace.toDouble()) * 100.0
@@ -920,7 +919,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     orphanedManifests = orphanedManifests,
                     estimatedSpaceToFree = estimatedSpaceToFree
                 )
-            } catch (e: java.sql.SQLException) {
+            } catch (e: SQLException) {
                 logger.error("SQL error in getGarbageCollectionStats: ${e.message}", e)
                 throw e
             } catch (e: Exception) {

@@ -1,5 +1,6 @@
-import blobstore.H2BlobStore
-import blobstore.ImageVersion
+import com.statewidesoftware.nscr.RegistryServerApp
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
+import com.statewidesoftware.nscr.blobstore.ImageVersion
 import com.github.dockerjava.api.async.ResultCallback
 import com.github.dockerjava.api.model.Container
 import com.github.dockerjava.api.model.PullResponseItem

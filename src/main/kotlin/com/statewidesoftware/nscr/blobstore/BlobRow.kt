@@ -1,6 +1,7 @@
-package blobstore
+package com.statewidesoftware.nscr.blobstore
 
 import java.io.InputStream
+import java.sql.ResultSet
 
 // this represents a row in the blobs table
 // it has the columns sessionID, blobNumber, digest, and content
@@ -17,7 +18,7 @@ class BlobRow(
     }
 
     companion object {
-        fun fromResultSet(rs: java.sql.ResultSet): BlobRow {
+        fun fromResultSet(rs: ResultSet): BlobRow {
             return BlobRow(
                 rs.getString("sessionID"),
                 rs.getInt("blobNumber"),

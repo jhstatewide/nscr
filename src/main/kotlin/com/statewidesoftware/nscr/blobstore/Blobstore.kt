@@ -1,9 +1,8 @@
-package blobstore
+package com.statewidesoftware.nscr.blobstore
 
-import SessionID
+import com.statewidesoftware.nscr.SessionID
 import org.jdbi.v3.core.Handle
 import java.io.InputStream
-import java.sql.ResultSet
 
 @JvmInline
 value class Digest(val digestString: String)

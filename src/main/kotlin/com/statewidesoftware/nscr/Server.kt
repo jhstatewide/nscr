@@ -1,12 +1,12 @@
-import blobstore.Blobstore
-import blobstore.Digest
-import blobstore.H2BlobStore
-import blobstore.ImageVersion
+package com.statewidesoftware.nscr
+
+import com.statewidesoftware.nscr.blobstore.Blobstore
+import com.statewidesoftware.nscr.blobstore.Digest
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
+import com.statewidesoftware.nscr.blobstore.ImageVersion
 import io.javalin.Javalin
 import mu.KLogger
 import mu.KotlinLogging
-import nscr.Config
-import org.jdbi.v3.core.Handle
 import java.security.MessageDigest
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.Level

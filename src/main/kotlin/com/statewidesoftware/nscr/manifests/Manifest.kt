@@ -1,4 +1,4 @@
-package manifests
+package com.statewidesoftware.nscr.manifests
 
 import com.google.gson.annotations.SerializedName
 
