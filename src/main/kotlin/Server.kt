@@ -37,6 +37,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     init {
         bindApp(app, logger)
         
+        // Start cleanup task if blobstore supports it
+        if (blobStore is H2BlobStore) {
+            blobStore.startCleanupTask()
+        }
+        
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
             logger.info("Shutting down RegistryServerApp...")

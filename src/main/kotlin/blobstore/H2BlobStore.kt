@@ -14,15 +14,26 @@ import java.io.InputStream
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.Exception
 import kotlin.io.path.Path
+import java.nio.file.FileStore
 
-class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
+/**
+ * Result of incomplete upload cleanup operation
+ */
+data class CleanupResult(
+    val blobsRemoved: Int,
+    val spaceFreed: Long,
+    val sessionsRemoved: Int
+)
+
+class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
-    private val cleanupExecutor = Executors.newSingleThreadExecutor { r ->
+    private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "blobstore-cleanup").apply { isDaemon = true }
     }
 
@@ -529,6 +540,127 @@ class H2BlobStore(dataDirectory: Path = Config.DATABASE_PATH): Blobstore {
                 logger.error("Error in listTags for $repository: ${e.message}", e)
                 throw e
             }
+        }
+    }
+
+    /**
+     * Check if disk space is below the configured threshold
+     */
+    private fun isDiskSpaceLow(): Boolean {
+        return try {
+            val fileStore = java.nio.file.Files.getFileStore(dataDirectory)
+            val totalSpace = fileStore.totalSpace
+            val freeSpace = fileStore.usableSpace
+            val freeSpacePercent = (freeSpace.toDouble() / totalSpace.toDouble()) * 100.0
+            
+            logger.debug("Disk space: ${String.format("%.2f", freeSpacePercent)}% free (${freeSpace / (1024 * 1024)} MB free of ${totalSpace / (1024 * 1024)} MB total)")
+            
+            freeSpacePercent < Config.CLEANUP_MIN_FREE_SPACE_PERCENT
+        } catch (e: Exception) {
+            logger.warn("Failed to check disk space: ${e.message}")
+            false // Don't trigger cleanup if we can't check disk space
+        }
+    }
+
+    /**
+     * Clean up incomplete uploads based on age and disk space
+     */
+    fun cleanupIncompleteUploads(): CleanupResult {
+        return jdbi.inTransaction<CleanupResult, Exception> { handle ->
+            var blobsRemoved = 0
+            var spaceFreed = 0L
+            var sessionsRemoved = 0
+            
+            try {
+                val maxAgeMillis = Config.CLEANUP_MAX_AGE_HOURS * 60 * 60 * 1000L
+                val cutoffTime = System.currentTimeMillis() - maxAgeMillis
+                
+                logger.info("Starting incomplete upload cleanup (max age: ${Config.CLEANUP_MAX_AGE_HOURS} hours)")
+                
+                // Find incomplete uploads (sessions with null digests)
+                val incompleteSessions = handle.createQuery("""
+                    SELECT DISTINCT sessionID 
+                    FROM blobs 
+                    WHERE digest IS NULL
+                """).map { rs, _ -> rs.getString("sessionID") }
+                    .list()
+                
+                logger.info("Found ${incompleteSessions.size} incomplete upload sessions")
+                
+                // Remove blobs for incomplete sessions
+                for (sessionId in incompleteSessions) {
+                    val sessionBlobs = handle.createQuery("""
+                        SELECT LENGTH(content) as size 
+                        FROM blobs 
+                        WHERE sessionID = :sessionID
+                    """).bind("sessionID", sessionId)
+                        .map { rs, _ -> rs.getLong("size") }
+                        .list()
+                    
+                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE sessionID = :sessionID")
+                        .bind("sessionID", sessionId)
+                        .execute()
+                    
+                    if (deleted > 0) {
+                        blobsRemoved += deleted
+                        spaceFreed += sessionBlobs.sum()
+                        sessionsRemoved++
+                        logger.debug("Removed $deleted blobs from incomplete session $sessionId (${sessionBlobs.sum()} bytes)")
+                    }
+                }
+                
+                logger.info("Cleanup completed: $blobsRemoved blobs removed, $spaceFreed bytes freed, $sessionsRemoved sessions cleaned")
+                
+            } catch (e: Exception) {
+                logger.error("Error during incomplete upload cleanup: ${e.message}", e)
+                // Return partial results on error
+            }
+            
+            CleanupResult(blobsRemoved, spaceFreed, sessionsRemoved)
+        }
+    }
+
+    /**
+     * Start the periodic cleanup task
+     */
+    fun startCleanupTask() {
+        if (!Config.CLEANUP_ENABLED) {
+            logger.info("Incomplete upload cleanup is disabled")
+            return
+        }
+        
+        logger.info("Starting periodic incomplete upload cleanup (interval: ${Config.CLEANUP_INTERVAL_MINUTES} minutes)")
+        
+        cleanupExecutor.scheduleAtFixedRate({
+            try {
+                val diskSpaceLow = isDiskSpaceLow()
+                val shouldCleanup = diskSpaceLow || true // Always run based on age, also run if disk space is low
+                
+                if (shouldCleanup) {
+                    val result = cleanupIncompleteUploads()
+                    if (result.blobsRemoved > 0) {
+                        logger.info("Periodic cleanup removed ${result.blobsRemoved} blobs, freed ${result.spaceFreed} bytes (disk space low: $diskSpaceLow)")
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error("Error in periodic cleanup task: ${e.message}", e)
+            }
+        }, Config.CLEANUP_INTERVAL_MINUTES.toLong(), Config.CLEANUP_INTERVAL_MINUTES.toLong(), TimeUnit.MINUTES)
+    }
+
+    /**
+     * Stop the cleanup task
+     */
+    fun stopCleanupTask() {
+        logger.info("Stopping periodic cleanup task")
+        cleanupExecutor.shutdown()
+        try {
+            if (!cleanupExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                cleanupExecutor.shutdownNow()
+            }
+        } catch (e: InterruptedException) {
+            cleanupExecutor.shutdownNow()
+            Thread.currentThread().interrupt()
         }
     }
 

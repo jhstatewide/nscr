@@ -33,6 +33,12 @@ object Config {
     val GC_ENABLED: Boolean = System.getenv("NSCR_GC_ENABLED")?.toBoolean() ?: true
     val GC_INTERVAL_HOURS: Int = System.getenv("NSCR_GC_INTERVAL_HOURS")?.toIntOrNull() ?: 24
     
+    // Incomplete upload cleanup configuration
+    val CLEANUP_ENABLED: Boolean = System.getenv("NSCR_CLEANUP_ENABLED")?.toBoolean() ?: true
+    val CLEANUP_INTERVAL_MINUTES: Int = System.getenv("NSCR_CLEANUP_INTERVAL_MINUTES")?.toIntOrNull() ?: 30
+    val CLEANUP_MAX_AGE_HOURS: Int = System.getenv("NSCR_CLEANUP_MAX_AGE_HOURS")?.toIntOrNull() ?: 24
+    val CLEANUP_MIN_FREE_SPACE_PERCENT: Double = System.getenv("NSCR_CLEANUP_MIN_FREE_SPACE_PERCENT")?.toDoubleOrNull() ?: 10.0
+    
     // Multi-part upload configuration
     val MAX_UPLOAD_SIZE_MB: Long = System.getenv("NSCR_MAX_UPLOAD_SIZE_MB")?.toLongOrNull() ?: 1024L // 1GB default
     val CHUNK_SIZE_MB: Int = System.getenv("NSCR_CHUNK_SIZE_MB")?.toIntOrNull() ?: 10 // 10MB chunks
@@ -52,6 +58,10 @@ object Config {
         println("Registry URL: $REGISTRY_URL")
         println("Garbage Collection Enabled: $GC_ENABLED")
         println("GC Interval (hours): $GC_INTERVAL_HOURS")
+        println("Cleanup Enabled: $CLEANUP_ENABLED")
+        println("Cleanup Interval (minutes): $CLEANUP_INTERVAL_MINUTES")
+        println("Cleanup Max Age (hours): $CLEANUP_MAX_AGE_HOURS")
+        println("Cleanup Min Free Space (%): $CLEANUP_MIN_FREE_SPACE_PERCENT")
         println("Max Upload Size (MB): $MAX_UPLOAD_SIZE_MB")
         println("Chunk Size (MB): $CHUNK_SIZE_MB")
         println("=========================")
@@ -93,6 +103,18 @@ object Config {
         
         if (GC_INTERVAL_HOURS < 1) {
             errors.add("Invalid GC interval: $GC_INTERVAL_HOURS hours (must be >= 1)")
+        }
+        
+        if (CLEANUP_INTERVAL_MINUTES < 1) {
+            errors.add("Invalid cleanup interval: $CLEANUP_INTERVAL_MINUTES minutes (must be >= 1)")
+        }
+        
+        if (CLEANUP_MAX_AGE_HOURS < 1) {
+            errors.add("Invalid cleanup max age: $CLEANUP_MAX_AGE_HOURS hours (must be >= 1)")
+        }
+        
+        if (CLEANUP_MIN_FREE_SPACE_PERCENT < 0.0 || CLEANUP_MIN_FREE_SPACE_PERCENT > 100.0) {
+            errors.add("Invalid cleanup min free space: $CLEANUP_MIN_FREE_SPACE_PERCENT% (must be 0-100)")
         }
         
         return errors
