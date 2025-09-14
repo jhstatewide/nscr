@@ -74,6 +74,13 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
             val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
+            
+            if (!blobStore.hasManifest(imageVersion)) {
+                ctx.status(404)
+                ctx.result("Manifest not found")
+                return@get
+            }
+            
             if (imageVersion.tag.startsWith("sha256:")) {
                 // by digest
                 logger.debug("Want to look up digest for {}!", imageVersion)
@@ -195,6 +202,55 @@ class RegistryServerApp(logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
                 ctx.status(200)
                 ctx.attribute("handle", handle)
             }
+        }
+
+        // Docker Registry API v2 endpoints for deletion and management
+        app.delete("/v2/{name}/manifests/{reference}") { ctx ->
+            val name = ctx.pathParam("name")
+            val reference = ctx.pathParam("reference")
+            val imageVersion = ImageVersion(name, reference)
+            logger.info("Deleting manifest for $imageVersion")
+            
+            if (!blobStore.hasManifest(imageVersion)) {
+                ctx.status(404)
+                ctx.result("Manifest not found")
+                return@delete
+            }
+            
+            blobStore.removeManifest(imageVersion)
+            ctx.status(202)
+            ctx.result("Manifest deleted")
+        }
+
+        // List repositories
+        app.get("/v2/_catalog") { ctx ->
+            val repositories = blobStore.listRepositories()
+            val response = mapOf("repositories" to repositories)
+            ctx.json(response)
+        }
+
+        // List tags for a repository
+        app.get("/v2/{name}/tags/list") { ctx ->
+            val name = ctx.pathParam("name")
+            val tags = blobStore.listTags(name)
+            val response = mapOf(
+                "name" to name,
+                "tags" to tags
+            )
+            ctx.json(response)
+        }
+
+        // Garbage collection endpoint
+        app.post("/api/garbage-collect") { ctx ->
+            logger.info("Starting garbage collection...")
+            val result = blobStore.garbageCollect()
+            val response = mapOf(
+                "blobsRemoved" to result.blobsRemoved,
+                "spaceFreed" to result.spaceFreed,
+                "manifestsRemoved" to result.manifestsRemoved
+            )
+            ctx.contentType("application/json")
+            ctx.json(response)
         }
 
     }

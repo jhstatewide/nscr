@@ -100,7 +100,13 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
     }
 
     override fun removeBlob(digest: Digest) {
-        TODO("Not yet implemented")
+        jdbi.useTransaction<Exception> { handle ->
+            val deletedRows = handle.createUpdate("DELETE FROM blobs WHERE digest = :digest")
+                .bind("digest", digest.digestString)
+                .execute()
+            logger.info("Removed blob with digest ${digest.digestString}, deleted $deletedRows rows")
+            handle.commit()
+        }
     }
 
     @Throws(Exception::class)
@@ -218,5 +224,70 @@ class H2BlobStore(dataDirectory: Path = Path("./data/")): Blobstore {
                 rs.getLong("count")
             }.first()
         return count
+    }
+
+    override fun removeManifest(image: ImageVersion) {
+        jdbi.useTransaction<Exception> { handle ->
+            val deletedRows = handle.createUpdate("DELETE FROM manifests WHERE name = :name AND tag = :tag")
+                .bind("name", image.name)
+                .bind("tag", image.tag)
+                .execute()
+            logger.info("Removed manifest for $image, deleted $deletedRows rows")
+            handle.commit()
+        }
+    }
+
+    override fun listRepositories(): List<String> {
+        return jdbi.withHandle<List<String>, Exception> { handle ->
+            handle.createQuery("SELECT DISTINCT name FROM manifests ORDER BY name")
+                .map { rs, _ -> rs.getString("name") }
+                .list()
+        }
+    }
+
+    override fun listTags(repository: String): List<String> {
+        return jdbi.withHandle<List<String>, Exception> { handle ->
+            handle.createQuery("SELECT tag FROM manifests WHERE name = :name ORDER BY tag")
+                .bind("name", repository)
+                .map { rs, _ -> rs.getString("tag") }
+                .list()
+        }
+    }
+
+    override fun garbageCollect(): GarbageCollectionResult {
+        return jdbi.inTransaction<GarbageCollectionResult, Exception> { handle ->
+            var blobsRemoved = 0
+            var spaceFreed = 0L
+            var manifestsRemoved = 0
+            
+            try {
+                // For now, implement a simple garbage collection that removes blobs without digests
+                // (these are typically from failed uploads or incomplete sessions)
+                val unreferencedBlobs = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NULL")
+                    .map { rs, _ -> rs.getString("digest") }.list()
+                
+                for (digest in unreferencedBlobs) {
+                    val blobSize = handle.createQuery("SELECT LENGTH(content) as size FROM blobs WHERE digest IS NULL LIMIT 1")
+                        .map { rs, _ -> rs.getLong("size") }.firstOrNull() ?: 0L
+                    
+                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL LIMIT 1")
+                        .execute()
+                    
+                    if (deleted > 0) {
+                        blobsRemoved++
+                        spaceFreed += blobSize
+                        logger.info("Garbage collected unreferenced blob (${blobSize} bytes)")
+                    }
+                }
+                
+                logger.info("Garbage collection completed: $blobsRemoved blobs removed, $spaceFreed bytes freed, $manifestsRemoved manifests removed")
+                
+            } catch (e: Exception) {
+                logger.error("Error during garbage collection: ${e.message}")
+                // Return empty result on error
+            }
+            
+            GarbageCollectionResult(blobsRemoved, spaceFreed, manifestsRemoved)
+        }
     }
 }

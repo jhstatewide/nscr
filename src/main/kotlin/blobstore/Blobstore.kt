@@ -10,6 +10,12 @@ value class Digest(val digestString: String)
 
 data class ImageVersion(val name: String, val tag: String)
 
+data class GarbageCollectionResult(
+    val blobsRemoved: Int,
+    val spaceFreed: Long,
+    val manifestsRemoved: Int
+)
+
 // This represents the abstract interface to the blobstore
 interface Blobstore {
     fun hasBlob(digest: Digest): Boolean
@@ -24,4 +30,8 @@ interface Blobstore {
     fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit)
     fun countBlobs(): Long
     fun eachBlob(function: (BlobRow) -> Unit)
+    fun removeManifest(image: ImageVersion)
+    fun listRepositories(): List<String>
+    fun listTags(repository: String): List<String>
+    fun garbageCollect(): GarbageCollectionResult
 }

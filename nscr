@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# NSCR Registry Management Tool
+# Convenience wrapper for the main management script
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANAGEMENT_SCRIPT="$SCRIPT_DIR/scripts/management/nscr"
+
+if [ ! -f "$MANAGEMENT_SCRIPT" ]; then
+    echo "Error: Management script not found at $MANAGEMENT_SCRIPT"
+    exit 1
+fi
+
+exec "$MANAGEMENT_SCRIPT" "$@"

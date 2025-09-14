@@ -13,4 +13,36 @@ To push an image, we will be pushing at least two things: a manifest and a blob.
 
 We first need to get a session ID. We get this by doing a POST to `/v2/<image-name>/blobs/uploads/`. This will return a session ID that we can use to upload the blob.
 
-TODO: check that the endpoint actually exists
+## Quick Start
+
+1. **Build and run the registry:**
+   ```bash
+   ./gradlew build
+   ./gradlew run
+   ```
+
+2. **Test the registry:**
+   ```bash
+   ./scripts/tests/test_registry.sh
+   ```
+
+3. **Manage your registry:**
+   ```bash
+   ./nscr status                    # Check registry status
+   ./nscr list-repos               # List repositories
+   ./nscr delete-image <repo> <tag> # Delete an image
+   ./nscr garbage-collect          # Free up space
+   ```
+
+## Features
+
+- ✅ **Push/Pull Images** - Full Docker Registry API v2 compatibility
+- ✅ **Image Deletion** - Remove specific images by repository and tag
+- ✅ **Garbage Collection** - Automatically clean up unreferenced blobs
+- ✅ **Repository Management** - List repositories and tags
+- ✅ **Storage Management** - Monitor and reclaim storage space
+- ✅ **Management Tools** - Command-line interface for registry operations
+
+## Scripts
+
+See `scripts/README.md` for detailed information about available management and test scripts.
