@@ -248,15 +248,22 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val imageVersion = ImageVersion(name, reference)
             logger.info("Deleting manifest for $imageVersion")
             
-            if (!blobStore.hasManifest(imageVersion)) {
-                ctx.status(404)
-                ctx.result("Manifest not found")
-                return@delete
+            try {
+                // Atomic delete operation - check and delete in one transaction
+                val wasDeleted = blobStore.removeManifestIfExists(imageVersion)
+                
+                if (wasDeleted) {
+                    ctx.status(202)
+                    ctx.result("Manifest deleted")
+                } else {
+                    ctx.status(404)
+                    ctx.result("Manifest not found")
+                }
+            } catch (e: Exception) {
+                logger.error("Error deleting manifest for $imageVersion: ${e.message}", e)
+                ctx.status(500)
+                ctx.result("Internal server error")
             }
-            
-            blobStore.removeManifest(imageVersion)
-            ctx.status(202)
-            ctx.result("Manifest deleted")
         }
 
         // List repositories

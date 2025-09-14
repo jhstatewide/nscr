@@ -39,6 +39,7 @@ interface Blobstore {
     fun countBlobs(): Long
     fun eachBlob(function: (BlobRow) -> Unit)
     fun removeManifest(image: ImageVersion)
+    fun removeManifestIfExists(image: ImageVersion): Boolean
     fun listRepositories(): List<String>
     fun listTags(repository: String): List<String>
     fun garbageCollect(): GarbageCollectionResult

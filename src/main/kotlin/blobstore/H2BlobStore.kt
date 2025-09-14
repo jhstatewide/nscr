@@ -510,6 +510,27 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         }
     }
 
+    override fun removeManifestIfExists(image: ImageVersion): Boolean {
+        return jdbi.inTransaction<Boolean, Exception> { handle ->
+            try {
+                val deletedRows = handle.createUpdate("DELETE FROM manifests WHERE name = :name AND tag = :tag")
+                    .bind("name", image.name)
+                    .bind("tag", image.tag)
+                    .execute()
+                
+                val wasDeleted = deletedRows > 0
+                logger.info("Attempted to remove manifest for $image, deleted $deletedRows rows (existed: $wasDeleted)")
+                wasDeleted
+            } catch (e: java.sql.SQLException) {
+                logger.error("SQL error in removeManifestIfExists for $image: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in removeManifestIfExists for $image: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
     override fun listRepositories(): List<String> {
         return jdbi.withHandle<List<String>, Exception> { handle ->
             try {
