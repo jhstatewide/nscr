@@ -48,6 +48,8 @@ hs_err_pid*
 
 # Frontend build artifacts
 frontend/dist/
+node_modules/
+frontend/node_modules/
 
 # IDE and editor files
 .cursor/
