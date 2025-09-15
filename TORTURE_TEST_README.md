@@ -50,10 +50,38 @@ After each operation, the test validates that:
 - **Duration**: ~30 seconds
 - **Output**: `torture-test-quick-report.txt`
 
+### Concurrent Torture Test
+```bash
+./gradlew tortureTestConcurrent
+```
+- **Default**: 4 workers, 25 operations each, 500ms delays, max 8 concurrent operations
+- **Duration**: ~3-5 minutes
+- **Output**: `torture-test-concurrent-report.txt`
+- **Purpose**: Test registry under concurrent load with multiple workers
+
+### High-Intensity Concurrent Torture Test
+```bash
+./gradlew tortureTestConcurrentIntense
+```
+- **Default**: 8 workers, 50 operations each, 200ms delays, max 16 concurrent operations
+- **Duration**: ~5-10 minutes
+- **Output**: `torture-test-concurrent-intense-report.txt`
+- **Purpose**: High-intensity concurrent testing with many workers
+
+### Maximum Stress Concurrent Torture Test
+```bash
+./gradlew tortureTestConcurrentStress
+```
+- **Default**: 16 workers, 100 operations each, 100ms delays, max 32 concurrent operations
+- **Duration**: ~10-20 minutes
+- **Output**: `torture-test-concurrent-stress-report.txt`
+- **Purpose**: Maximum stress testing - use with caution
+
 ## Customization
 
 You can customize the torture test parameters using Gradle properties:
 
+### Sequential Torture Test Customization
 ```bash
 # Custom registry URL
 ./gradlew tortureTest -Ptorture.registryUrl=localhost:8080
@@ -69,6 +97,30 @@ You can customize the torture test parameters using Gradle properties:
 
 # Combine multiple properties
 ./gradlew tortureTest -Ptorture.registryUrl=localhost:8080 -Ptorture.maxOperations=75 -Ptorture.operationDelayMs=1000
+```
+
+### Concurrent Torture Test Customization
+```bash
+# Custom number of workers
+./gradlew tortureTestConcurrent -Ptorture.numWorkers=8
+
+# Custom operations per worker
+./gradlew tortureTestConcurrent -Ptorture.operationsPerWorker=50
+
+# Custom delay between operations (milliseconds)
+./gradlew tortureTestConcurrent -Ptorture.operationDelayMs=200
+
+# Custom maximum concurrent operations
+./gradlew tortureTestConcurrent -Ptorture.maxConcurrentOperations=16
+
+# Custom registry URL
+./gradlew tortureTestConcurrent -Ptorture.registryUrl=localhost:8080
+
+# Custom output file
+./gradlew tortureTestConcurrent -Ptorture.outputFile=my-concurrent-test-report.txt
+
+# Combine multiple properties
+./gradlew tortureTestConcurrent -Ptorture.numWorkers=6 -Ptorture.operationsPerWorker=30 -Ptorture.operationDelayMs=300 -Ptorture.maxConcurrentOperations=12
 ```
 
 ## Test Images
@@ -163,11 +215,20 @@ Final Registry State:
 
 ### Stress Testing
 ```bash
-# High-intensity test
+# High-intensity sequential test
 ./gradlew tortureTest -Ptorture.maxOperations=500 -Ptorture.operationDelayMs=100
 
-# Long-running test
+# Long-running sequential test
 ./gradlew tortureTest -Ptorture.maxOperations=1000 -Ptorture.operationDelayMs=5000
+
+# High-intensity concurrent test
+./gradlew tortureTestConcurrentIntense
+
+# Maximum stress concurrent test
+./gradlew tortureTestConcurrentStress
+
+# Custom high-concurrency test
+./gradlew tortureTestConcurrent -Ptorture.numWorkers=12 -Ptorture.operationsPerWorker=75 -Ptorture.operationDelayMs=150 -Ptorture.maxConcurrentOperations=20
 ```
 
 ### Custom Registry Testing
@@ -219,20 +280,54 @@ For detailed debugging, you can run the torture test with increased logging:
 ./gradlew tortureTest -Dorg.slf4j.simpleLogger.defaultLogLevel=debug
 ```
 
+## Concurrent Testing Features
+
+The concurrent torture test provides advanced testing capabilities:
+
+### Key Features
+- **Multiple Workers**: N concurrent workers performing operations simultaneously
+- **Thread-Safe Operations**: All operations are properly synchronized
+- **Concurrency Control**: Semaphore-based limiting of concurrent operations
+- **Worker Statistics**: Per-worker performance tracking
+- **Race Condition Detection**: Designed to catch concurrency-related bugs
+- **Load Testing**: Simulates real-world concurrent usage patterns
+
+### When to Use Concurrent Testing
+- **Race Condition Testing**: Detect deadlocks, race conditions, and synchronization issues
+- **Load Testing**: Test registry performance under concurrent load
+- **Stress Testing**: Push the registry to its limits with high concurrency
+- **Real-World Simulation**: Mimic actual usage patterns with multiple clients
+
+### Concurrency Parameters
+- **numWorkers**: Number of concurrent worker threads
+- **operationsPerWorker**: Operations each worker performs
+- **maxConcurrentOperations**: Maximum operations running simultaneously
+- **operationDelayMs**: Delay between operations (shorter = more intense)
+
 ## Integration with Existing Tests
 
 The torture test complements existing unit and integration tests:
 
 - **Unit Tests**: Test individual components in isolation
 - **Integration Tests**: Test component interactions
-- **Torture Test**: Test system behavior under random load and validate correctness
+- **Sequential Torture Test**: Test system behavior under random load and validate correctness
+- **Concurrent Torture Test**: Test system behavior under concurrent load and detect race conditions
 
 ## Performance Considerations
 
+### Sequential Torture Test
 - **Operation Delay**: Adjust `operationDelayMs` based on system performance
-- **Concurrent Operations**: The test runs operations sequentially to ensure deterministic validation
+- **Sequential Operations**: The test runs operations sequentially to ensure deterministic validation
 - **Resource Usage**: Each push operation downloads and uploads images, consuming bandwidth and disk space
 - **Cleanup**: The test automatically cleans up local Docker images after pushing
+
+### Concurrent Torture Test
+- **Worker Count**: More workers increase concurrency but also resource usage
+- **Concurrent Operations**: Limited by `maxConcurrentOperations` to prevent overwhelming the registry
+- **Operation Delay**: Shorter delays increase intensity but may cause timeouts
+- **Resource Usage**: Multiple workers downloading/uploading simultaneously increases bandwidth and disk usage
+- **Thread Safety**: All operations are thread-safe with proper synchronization
+- **Registry Load**: High concurrency may stress the registry - monitor system resources
 
 ## Contributing
 

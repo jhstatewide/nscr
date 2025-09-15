@@ -210,6 +210,78 @@ tasks.register<JavaExec>("tortureTestQuick") {
     errorOutput = System.err
 }
 
+// Concurrent torture test with multiple workers
+tasks.register<JavaExec>("tortureTestConcurrent") {
+    group = "testing"
+    description = "Run concurrent registry torture test with N workers hitting the registry simultaneously"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
+    
+    // Concurrent test parameters
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "4"
+    val operationsPerWorker = project.findProperty("torture.operationsPerWorker") as String? ?: "25"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "500"
+    val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "8"
+    val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-report.txt"
+    
+    args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
+// High-intensity concurrent torture test
+tasks.register<JavaExec>("tortureTestConcurrentIntense") {
+    group = "testing"
+    description = "Run high-intensity concurrent registry torture test with many workers and operations"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
+    
+    // High-intensity test parameters
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "8"
+    val operationsPerWorker = project.findProperty("torture.operationsPerWorker") as String? ?: "50"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "200"
+    val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "16"
+    val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-intense-report.txt"
+    
+    args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
+// Stress test with maximum concurrency
+tasks.register<JavaExec>("tortureTestConcurrentStress") {
+    group = "testing"
+    description = "Run maximum stress concurrent registry torture test - use with caution"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
+    
+    // Maximum stress test parameters
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "16"
+    val operationsPerWorker = project.findProperty("torture.operationsPerWorker") as String? ?: "100"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "100"
+    val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "32"
+    val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-stress-report.txt"
+    
+    args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
 // Profiling task for JVisualVM and Java Mission Control
 tasks.register<JavaExec>("runProfile") {
     group = "application"
