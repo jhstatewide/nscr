@@ -239,7 +239,7 @@ tasks.register<JavaExec>("runProfile") {
         
         // GC logging for analysis (Java 17 compatible)
         "-XX:+UseG1GC",
-        "-Xlog:gc*:gc-profile.log:time"
+        // "-Xlog:gc*:gc-profile.log:time"
     )
     
     dependsOn("build")
