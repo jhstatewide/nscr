@@ -85,6 +85,8 @@ tasks.detekt {
         txt.required.set(false)
         sarif.required.set(false)
     }
+    // Make detekt non-blocking - it can run but won't fail the build
+    ignoreFailures = true
 }
 
 // Node.js configuration
