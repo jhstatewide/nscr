@@ -37,7 +37,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     }
 
     init {
-        dataSource.setURL("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
+        // Configure H2 with proper shutdown behavior and MVStore settings
+        val dbUrl = "jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;MV_STORE=TRUE;AUTOCOMMIT=TRUE"
+        dataSource.setURL(dbUrl)
         dataSource.user = Config.DATABASE_USER
         dataSource.password = Config.DATABASE_PASSWORD
         // Note: H2 JdbcDataSource doesn't support connection pooling configuration
@@ -47,6 +49,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         
         logger.info("H2BlobStore initialized with database path: ${dataDirectory.toAbsolutePath()}")
         logger.info("Database user: ${Config.DATABASE_USER}, max connections: ${Config.DATABASE_MAX_CONNECTIONS}")
+        logger.info("Database URL: $dbUrl")
         
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
@@ -58,8 +61,17 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     @Throws(Exception::class)
     private fun provisionTables() {
         jdbi.useTransaction<RuntimeException> { handle: Handle ->
-            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, CONSTRAINT unique_digest UNIQUE (digest));")
+            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
             handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+            
+            // Add size column if it doesn't exist (for existing databases)
+            try {
+                handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS size bigint")
+            } catch (e: Exception) {
+                // Column might already exist, ignore error
+                logger.debug("Size column already exists or couldn't be added: ${e.message}")
+            }
+            
             handle.commit()
             logger.info("H2 Blobstore initialized!")
         }
@@ -128,12 +140,15 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             // get an input stream for the file
             tempFile.inputStream().use { fileInputStream ->
                 jdbi.useTransaction<RuntimeException> { handle ->
-                    val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content) values (?, ?, ?)")
+                    val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content, size) values (?, ?, ?, ?)")
                     statement.setString(1, sessionID.id)
                     if (blobNumber != null) {
                         statement.setInt(2, blobNumber)
+                    } else {
+                        statement.setNull(2, java.sql.Types.INTEGER)
                     }
                     statement.setBinaryStream(3, fileInputStream, size)
+                    statement.setLong(4, size)
                     val result = statement.executeUpdate()
                     handle.commit()
                     logger.debug("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
@@ -294,12 +309,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     // Read the stitched blob and insert it as a new blob with the digest
                     tempFile.inputStream().use { stitchedInputStream ->
                         val insertStatement = handle.connection.prepareStatement(
-                            "INSERT INTO blobs(sessionID, blobNumber, digest, content) VALUES (?, ?, ?, ?)"
+                            "INSERT INTO blobs(sessionID, blobNumber, digest, content, size) VALUES (?, ?, ?, ?, ?)"
                         )
                         insertStatement.setString(1, sessionID.id)
                         insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
                         insertStatement.setString(3, digest.digestString)
                         insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
+                        insertStatement.setLong(5, stitchedSize)
                         insertStatement.executeUpdate()
                     }
 
@@ -957,10 +973,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 val unreferencedDigests = allBlobDigests.filter { !referencedDigests.contains(it) }
                 val unreferencedBlobs = unreferencedDigests.size.toLong()
                 
-                // Calculate estimated space to free
+                // Calculate actual space to free using the size column (much faster than LENGTH(content))
                 val estimatedSpaceToFree = if (unreferencedDigests.isNotEmpty()) {
                     val spaceQuery = unreferencedDigests.joinToString(",") { "'$it'" }
-                    handle.createQuery("SELECT SUM(LENGTH(content)) FROM blobs WHERE digest IN ($spaceQuery)")
+                    handle.createQuery("SELECT SUM(size) FROM blobs WHERE digest IN ($spaceQuery)")
                         .map { rs, _ -> rs.getLong(1) ?: 0L }
                         .firstOrNull() ?: 0L
                 } else {
@@ -1007,6 +1023,35 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 logger.warn("Cleanup executor did not terminate gracefully, forcing shutdown")
                 cleanupExecutor.shutdownNow()
+            }
+            
+            // Execute proper H2 shutdown sequence to terminate MVStore background threads
+            try {
+                // Step 1: Execute SHUTDOWN command to properly close the database
+                jdbi.useHandle<Exception> { handle ->
+                    handle.execute("SHUTDOWN")
+                    logger.info("H2 SHUTDOWN command executed")
+                }
+            } catch (e: Exception) {
+                logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
+            }
+            
+            // Step 2: Close H2 DataSource connections
+            try {
+                // Force close all connections in the H2 DataSource
+                dataSource.connection.close()
+                logger.info("H2 DataSource connections closed")
+            } catch (e: Exception) {
+                logger.warn("Error closing H2 DataSource connections: ${e.message}")
+            }
+            
+            // Step 3: Force H2 to shutdown and close MVStore background threads
+            try {
+                // This will shutdown the H2 database engine and close all background threads
+                org.h2.Driver.unload()
+                logger.info("H2 database engine unloaded")
+            } catch (e: Exception) {
+                logger.warn("Error unloading H2 database engine: ${e.message}")
             }
             
             logger.info("H2BlobStore cleanup completed")

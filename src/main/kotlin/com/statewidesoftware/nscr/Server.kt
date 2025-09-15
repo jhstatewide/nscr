@@ -255,27 +255,27 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     }
 
     private fun bindApp(app: Javalin, logger: KLogger) {
-        app.before { ctx ->
-            logger.debug("BEFORE: ${ctx.method()} to ${ctx.url()}")
-        }
-        
         // Central authentication for Docker Registry API endpoints
         app.before("/v2") { ctx ->
-            logger.info("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             ctx.requireAuth()
         }
         app.before("/v2/*") { ctx ->
-            logger.info("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             ctx.requireAuth()
         }
         
-        // Central authentication for administrative API endpoints
+        // Central authentication for administrative API endpoints (exclude status endpoint)
         app.before("/api") { ctx ->
-            logger.info("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            if (!ctx.url().contains("/status")) {
+                logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            }
             ctx.requireAuth()
         }
         app.before("/api/*") { ctx ->
-            logger.info("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            if (!ctx.url().contains("/status")) {
+                logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            }
             ctx.requireAuth()
         }
 
