@@ -274,7 +274,7 @@ class RegistryTortureTest(
                 logger.warn(e) { "Failed to clean up local image $registryImage" }
             }
             
-            OperationResult(
+            return OperationResult(
                 operation = "push",
                 success = true,
                 message = "Successfully pushed $registryImage",
@@ -284,7 +284,7 @@ class RegistryTortureTest(
             )
             
         } catch (e: Exception) {
-            OperationResult(
+            return OperationResult(
                 operation = "push",
                 success = false,
                 message = "Failed to push $registryImage: ${e.message}",
@@ -331,7 +331,7 @@ class RegistryTortureTest(
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateDeleteOperation(statsBefore, statsAfter, repository)
                 
-                OperationResult(
+                return OperationResult(
                     operation = "delete",
                     success = true,
                     message = "Successfully deleted repository $repository",
@@ -340,7 +340,7 @@ class RegistryTortureTest(
                     validationPassed = validationPassed
                 )
             } else {
-                OperationResult(
+                return OperationResult(
                     operation = "delete",
                     success = false,
                     message = "Failed to delete repository $repository: ${response.statusCode()}",
@@ -351,7 +351,7 @@ class RegistryTortureTest(
             }
             
         } catch (e: Exception) {
-            OperationResult(
+            return OperationResult(
                 operation = "delete",
                 success = false,
                 message = "Failed to delete repository $repository: ${e.message}",
@@ -396,7 +396,7 @@ class RegistryTortureTest(
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateQueryOperation(statsBefore, statsAfter, repository, tags)
                 
-                OperationResult(
+                return OperationResult(
                     operation = "query",
                     success = true,
                     message = "Successfully queried repository $repository with ${tags.size} tags",
@@ -405,7 +405,7 @@ class RegistryTortureTest(
                     validationPassed = validationPassed
                 )
             } else {
-                OperationResult(
+                return OperationResult(
                     operation = "query",
                     success = false,
                     message = "Failed to query repository $repository: ${response.statusCode()}",
@@ -416,7 +416,7 @@ class RegistryTortureTest(
             }
             
         } catch (e: Exception) {
-            OperationResult(
+            return OperationResult(
                 operation = "query",
                 success = false,
                 message = "Failed to query repository $repository: ${e.message}",
@@ -448,7 +448,7 @@ class RegistryTortureTest(
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateListReposOperation(statsBefore, statsAfter, repositories)
                 
-                OperationResult(
+                return OperationResult(
                     operation = "list_repos",
                     success = true,
                     message = "Successfully listed ${repositories.size} repositories",
@@ -457,7 +457,7 @@ class RegistryTortureTest(
                     validationPassed = validationPassed
                 )
             } else {
-                OperationResult(
+                return OperationResult(
                     operation = "list_repos",
                     success = false,
                     message = "Failed to list repositories: ${response.statusCode()}",
@@ -468,7 +468,7 @@ class RegistryTortureTest(
             }
             
         } catch (e: Exception) {
-            OperationResult(
+            return OperationResult(
                 operation = "list_repos",
                 success = false,
                 message = "Failed to list repositories: ${e.message}",
@@ -512,7 +512,7 @@ class RegistryTortureTest(
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateListTagsOperation(statsBefore, statsAfter, repository, tags)
                 
-                OperationResult(
+                return OperationResult(
                     operation = "list_tags",
                     success = true,
                     message = "Successfully listed ${tags.size} tags for repository $repository",
@@ -521,7 +521,7 @@ class RegistryTortureTest(
                     validationPassed = validationPassed
                 )
             } else {
-                OperationResult(
+                return OperationResult(
                     operation = "list_tags",
                     success = false,
                     message = "Failed to list tags for repository $repository: ${response.statusCode()}",
@@ -532,7 +532,7 @@ class RegistryTortureTest(
             }
             
         } catch (e: Exception) {
-            OperationResult(
+            return OperationResult(
                 operation = "list_tags",
                 success = false,
                 message = "Failed to list tags for repository $repository: ${e.message}",

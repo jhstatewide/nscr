@@ -94,13 +94,21 @@ node {
     download.set(true)
 }
 
+// Frontend npm install task
+tasks.register<Exec>("npm_install") {
+    group = "frontend"
+    description = "Install frontend dependencies with npm"
+    workingDir = file("frontend")
+    commandLine("npm", "install")
+}
+
 // Frontend build task
 tasks.register<Exec>("buildFrontend") {
     group = "frontend"
     description = "Build frontend assets with esbuild"
-    dependsOn("yarn_install")
+    dependsOn("npm_install")
     workingDir = file("frontend")
-    commandLine("yarn", "build")
+    commandLine("npm", "run", "build")
 }
 
 // Copy frontend assets to resources
@@ -126,9 +134,9 @@ tasks.named("build") {
 tasks.register<Exec>("devFrontend") {
     group = "frontend"
     description = "Start frontend development server"
-    dependsOn("yarn_install")
+    dependsOn("npm_install")
     workingDir = file("frontend")
-    commandLine("yarn", "dev")
+    commandLine("npm", "run", "dev")
 }
 
 // Registry Torture Test task
