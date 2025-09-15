@@ -787,32 +787,75 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 }
                 
                 // Step 4: Remove truly orphaned manifests (manifests that reference blobs that never existed)
-                // We only remove manifests that reference blobs that were never properly stored,
-                // not blobs that were correctly identified as unreferenced and removed in Step 3
-                // 
-                // A manifest is truly orphaned if it references a blob digest that never existed in the blobs table
-                // This typically happens due to failed uploads or corrupted data
-                val orphanedManifests = handle.createQuery("""
-                    SELECT m.name, m.tag, m.digest 
+                // We need to distinguish between:
+                // 1. Manifests that reference blobs that were never stored (truly orphaned - should be removed)
+                // 2. Manifests that reference blobs that were legitimately removed in Step 3 (should NOT be removed)
+                //
+                // The key insight: A manifest is truly orphaned if it references blobs that were NEVER stored,
+                // not blobs that were correctly identified as unreferenced and removed in Step 3.
+                
+                // First, collect all blob digests that were removed in Step 3
+                val removedBlobDigests = unreferencedDigests.toSet()
+                logger.info("Blobs removed in Step 3: ${removedBlobDigests.size}")
+                
+                // Find manifests that reference blobs that no longer exist
+                val manifestsWithMissingBlobs = handle.createQuery("""
+                    SELECT m.name, m.tag, m.digest, m.manifest
                     FROM manifests m
                     WHERE NOT EXISTS (
                         SELECT 1 FROM blobs b WHERE b.digest = m.digest
                     )
                 """).map { rs, _ ->
-                    Triple(rs.getString("name"), rs.getString("tag"), rs.getString("digest"))
+                    val name = rs.getString("name")
+                    val tag = rs.getString("tag")
+                    val digest = rs.getString("digest")
+                    val manifest = rs.getString("manifest")
+                    listOf(name, tag, digest, manifest)
                 }.list()
                 
-                for ((name, tag, digest) in orphanedManifests) {
-                    val deleted = handle.createUpdate("""
-                        DELETE FROM manifests 
-                        WHERE name = :name AND tag = :tag
-                    """).bind("name", name)
-                        .bind("tag", tag)
-                        .execute()
+                logger.info("Found ${manifestsWithMissingBlobs.size} manifests that reference missing blobs")
+                
+                for (manifestData in manifestsWithMissingBlobs) {
+                    val name = manifestData[0]
+                    val tag = manifestData[1]
+                    val digest = manifestData[2]
+                    val manifestJson = manifestData[3]
                     
-                    if (deleted > 0) {
-                        manifestsRemoved++
-                        logger.debug("Removed truly orphaned manifest $name:$tag (digest: $digest)")
+                    try {
+                        val manifestBlobDigests = extractBlobDigestsFromManifest(manifestJson)
+                        
+                        // Check if this manifest references any blobs that were NEVER stored
+                        // (not just blobs that were removed in Step 3)
+                        val hasNeverStoredBlobs = manifestBlobDigests.any { blobDigest ->
+                            // This blob was never stored if:
+                            // 1. It's not in the referencedDigests set (wasn't referenced by any manifest)
+                            // 2. It's not in the removedBlobDigests set (wasn't removed in Step 3)
+                            // 3. It doesn't exist in the current blobs table
+                            !referencedDigests.contains(blobDigest) && 
+                            !removedBlobDigests.contains(blobDigest) &&
+                            (handle.createQuery("SELECT 1 FROM blobs WHERE digest = :digest")
+                                .bind("digest", blobDigest)
+                                .map { rs, _ -> rs.getInt(1) }
+                                .firstOrNull()?.let { it > 0 } ?: false).not()
+                        }
+                        
+                        if (hasNeverStoredBlobs) {
+                            val deleted = handle.createUpdate("""
+                                DELETE FROM manifests 
+                                WHERE name = :name AND tag = :tag
+                            """).bind("name", name)
+                                .bind("tag", tag)
+                                .execute()
+                            
+                            if (deleted > 0) {
+                                manifestsRemoved++
+                                logger.debug("Removed truly orphaned manifest $name:$tag (digest: $digest) - references blobs that were never stored")
+                            }
+                        } else {
+                            logger.debug("Skipping manifest $name:$tag - references blobs that were legitimately removed in Step 3")
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("Failed to parse manifest $name:$tag for orphaned check: ${e.message}")
                     }
                 }
                 

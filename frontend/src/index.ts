@@ -1,6 +1,18 @@
 // Import Bootstrap JavaScript
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 
+// Global interface for window object
+declare global {
+  interface Window {
+    registryInterface?: RegistryWebInterface;
+  }
+}
+
+// Track ongoing deletions to prevent multiple simultaneous deletions
+const ongoingDeletions = new Set<string>();
+
+export {};
+
 interface RegistryStats {
   repositories: number;
   totalBlobs: number;
@@ -604,67 +616,119 @@ class RegistryWebInterface {
   }
 
   public async deleteRepository(repositoryName: string) {
-    // Show confirmation dialog
-    const confirmed = confirm(
-      `Are you sure you want to delete the repository "${repositoryName}"?\n\n` +
-      'This will permanently delete:\n' +
-      '• All tags in this repository\n' +
-      '• All manifests\n' +
-      '• All associated blobs (if not referenced by other repositories)\n\n' +
-      'This action cannot be undone.'
-    );
+    console.log('deleteRepository called with:', repositoryName, 'at', new Date().toISOString());
     
-    if (!confirmed) {
+    // Prevent multiple simultaneous deletions of the same repository
+    if (ongoingDeletions.has(repositoryName)) {
+      console.log('Deletion already in progress for:', repositoryName);
       return;
     }
     
+    ongoingDeletions.add(repositoryName);
+    
     try {
-      const response = await fetch(`/v2/${repositoryName}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
+      // Get tag count first for better confirmation
+      let tagCount = 0;
+      try {
+        const tagsResponse = await fetch(`/v2/${encodeURIComponent(repositoryName)}/tags/list`);
+        if (tagsResponse.ok) {
+          const tagsData = await tagsResponse.json();
+          tagCount = (tagsData.tags || []).length;
         }
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        this.showAlert(`
-          <strong>Repository Deleted Successfully!</strong><br>
-          Repository: ${repositoryName}<br>
-          Manifests deleted: ${result.manifestsDeleted || 'Unknown'}
-        `, 'success');
-        
-        // Remove the repository from our local list and adjust pagination
-        this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
-        
-        // Adjust current page if we're now on an empty page
-        const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
-        if (this.currentPage > totalPages && totalPages > 0) {
-          this.currentPage = totalPages;
-        }
-        
-        // Re-render the repositories list
-        this.renderRepositories();
-        
-        // Refresh the dashboard to update stats
-        this.loadDashboard();
-        
-      } else if (response.status === 404) {
-        this.showAlert(`Repository "${repositoryName}" not found`, 'warning');
-        // Remove from local list and refresh in case it was already deleted
-        this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
-        const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
-        if (this.currentPage > totalPages && totalPages > 0) {
-          this.currentPage = totalPages;
-        }
-        this.renderRepositories();
-      } else {
-        const errorText = await response.text();
-        this.showAlert(`Failed to delete repository "${repositoryName}": ${response.status} ${errorText}`, 'danger');
+      } catch (error) {
+        console.warn('Could not get tag count for confirmation:', error as Error);
       }
+
+      const tagInfo = tagCount > 0 ? ` (${tagCount} tag${tagCount === 1 ? '' : 's'})` : '';
+      const confirmed = confirm(
+        `Are you sure you want to delete repository "${repositoryName}"${tagInfo}?\n\n` +
+        'This will permanently delete:\n' +
+        '• All tags in this repository\n' +
+        '• All manifests\n' +
+        '• All associated blobs (if not referenced by other repositories)\n\n' +
+        'This action cannot be undone.'
+      );
       
+      if (!confirmed) {
+        ongoingDeletions.delete(repositoryName);
+        return;
+      }
+
+      try {
+        // Show loading state
+        const deleteButton = document.querySelector(`button[onclick*="deleteRepository('${repositoryName}')"]`) as HTMLElement;
+        if (deleteButton) {
+          deleteButton.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>Deleting...';
+          deleteButton.classList.add('disabled');
+        }
+
+        const response = await fetch(`/v2/${encodeURIComponent(repositoryName)}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          const deletedCount = result.manifestsDeleted || 0;
+          
+          this.showAlert(`
+            <strong>Repository Deleted Successfully!</strong><br>
+            Repository: ${repositoryName}<br>
+            Manifests deleted: ${deletedCount}<br>
+            <small class="text-muted">Note: You may want to run garbage collection to free up disk space from unreferenced blobs.</small>
+          `, 'success');
+          
+          // Remove the repository from our local list and adjust pagination
+          this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
+          
+          // Adjust current page if we're now on an empty page
+          const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+          if (this.currentPage > totalPages && totalPages > 0) {
+            this.currentPage = totalPages;
+          }
+          
+          // Re-render the repositories list
+          this.renderRepositories();
+          
+          // Refresh the dashboard to update stats
+          this.loadDashboard();
+          
+          // Don't reset button state after successful deletion - the repository list will be refreshed
+          return;
+          
+        } else if (response.status === 404) {
+          this.showAlert(`Repository "${repositoryName}" not found`, 'warning');
+          // Remove from local list and refresh in case it was already deleted
+          this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
+          const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+          if (this.currentPage > totalPages && totalPages > 0) {
+            this.currentPage = totalPages;
+          }
+          this.renderRepositories();
+        } else {
+          const errorText = await response.text();
+          throw new Error(`Failed to delete repository: ${response.statusText} - ${errorText}`);
+        }
+        
+      } catch (error) {
+        console.error('Error deleting repository:', error);
+        this.showAlert(`Failed to delete repository "${repositoryName}": ${(error as Error).message}`, 'danger');
+      } finally {
+        // Only reset button state if deletion wasn't successful (successful deletions return early)
+        const deleteButton = document.querySelector(`button[onclick*="deleteRepository('${repositoryName}')"]`) as HTMLElement;
+        if (deleteButton) {
+          deleteButton.innerHTML = '<i class="bi bi-trash"></i>';
+          deleteButton.classList.remove('disabled');
+        }
+        
+        // Remove from ongoing deletions
+        ongoingDeletions.delete(repositoryName);
+      }
     } catch (error) {
-      this.showAlert(`Failed to delete repository "${repositoryName}": ${error}`, 'danger');
+      console.error('Error in deleteRepository:', error);
+      ongoingDeletions.delete(repositoryName);
     }
   }
 
