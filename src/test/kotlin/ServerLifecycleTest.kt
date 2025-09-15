@@ -7,18 +7,60 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.Files
 import java.util.UUID
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 
 class ServerLifecycleTest {
+    private lateinit var app: RegistryServerApp
+    private lateinit var blobStore: H2BlobStore
+    private lateinit var testDbPath: Path
+
+    @BeforeEach
+    fun setUp() {
+        // Create unique test database path
+        testDbPath = Paths.get("./tmp/test-data/server-lifecycle-test-${UUID.randomUUID()}")
+        if (Files.exists(testDbPath)) {
+            Files.walk(testDbPath)
+                .sorted(Comparator.reverseOrder())
+                .forEach { Files.deleteIfExists(it) }
+        }
+        Files.createDirectories(testDbPath)
+        
+        val logger = KotlinLogging.logger {}
+        blobStore = H2BlobStore(testDbPath)
+        app = RegistryServerApp(logger, blobStore)
+    }
+    
+    @AfterEach
+    fun tearDown() {
+        try {
+            app.stop()
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+        
+        try {
+            blobStore.cleanup()
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+        
+        // Clean up test database files
+        if (Files.exists(testDbPath)) {
+            try {
+                Files.walk(testDbPath)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach { Files.deleteIfExists(it) }
+            } catch (e: Exception) {
+                // Ignore cleanup errors - files might be locked
+            }
+        }
+    }
 
     @Test
     fun testServerStartupAndShutdown() {
-        val logger = KotlinLogging.logger {}
-        // Use unique database path for this test
-        val uniqueDbPath = Paths.get("./tmp/test-data/server-lifecycle-test-${UUID.randomUUID()}")
-        val blobStore = H2BlobStore(uniqueDbPath)
-        val app = RegistryServerApp(logger, blobStore)
-        
         // Test that the server can be created and started
         val javalinApp = app.app
         assertTrue(javalinApp != null, "Javalin app should be created")

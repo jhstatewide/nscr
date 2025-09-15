@@ -9,46 +9,75 @@ import kotlin.test.assertTrue
 import java.util.Base64
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.Files
 import java.util.UUID
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 
 class BasicAuthTest {
     private lateinit var app: RegistryServerApp
+    private lateinit var testDbPath: Path
     
-    fun setUp(uniqueId: String = UUID.randomUUID().toString()) {
-        // Set up test environment with auth disabled
-        System.setProperty("NSCR_AUTH_ENABLED", "false")
-        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-$uniqueId")
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
+    @BeforeEach
+    fun setUp() {
+        // Create unique test database path
+        testDbPath = Paths.get("./tmp/test-data/basic-auth-test-${UUID.randomUUID()}")
+        if (Files.exists(testDbPath)) {
+            Files.walk(testDbPath)
+                .sorted(Comparator.reverseOrder())
+                .forEach { Files.deleteIfExists(it) }
+        }
+        Files.createDirectories(testDbPath)
     }
     
+    @AfterEach
     fun tearDown() {
-        app.stop()
+        try {
+            app.stop()
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+        
         // Clear environment variables
         System.clearProperty("NSCR_AUTH_ENABLED")
         System.clearProperty("NSCR_AUTH_USERNAME")
         System.clearProperty("NSCR_AUTH_PASSWORD")
+        
+        // Clean up test database files
+        if (Files.exists(testDbPath)) {
+            try {
+                Files.walk(testDbPath)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach { Files.deleteIfExists(it) }
+            } catch (e: Exception) {
+                // Ignore cleanup errors - files might be locked
+            }
+        }
+    }
+    
+    private fun createApp(authEnabled: Boolean = false) {
+        if (authEnabled) {
+            System.setProperty("NSCR_AUTH_ENABLED", "true")
+            System.setProperty("NSCR_AUTH_USERNAME", "testuser")
+            System.setProperty("NSCR_AUTH_PASSWORD", "testpass")
+        } else {
+            System.setProperty("NSCR_AUTH_ENABLED", "false")
+        }
+        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(testDbPath))
     }
     
     @Test
     fun `test registry access without auth when disabled`() {
-        setUp("no-auth-${UUID.randomUUID()}")
+        createApp(authEnabled = false)
         JavalinTest.test(app.app) { _, client ->
             val response = client.get("/v2")
             assertEquals(200, response.code)
         }
-        tearDown()
     }
     
     @Test
     fun `test registry access with auth when enabled`() {
-        // Enable auth with test credentials
-        System.setProperty("NSCR_AUTH_ENABLED", "true")
-        System.setProperty("NSCR_AUTH_USERNAME", "testuser")
-        System.setProperty("NSCR_AUTH_PASSWORD", "testpass")
-        
-        // Create new app with auth enabled using unique database path
-        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-with-auth-${UUID.randomUUID()}")
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
+        createApp(authEnabled = true)
         
         JavalinTest.test(app.app) { _, client ->
             // Test without auth - should fail
@@ -69,24 +98,11 @@ class BasicAuthTest {
             }
             assertEquals(401, responseWrongAuth.code)
         }
-        
-        app.stop()
-        // Clear environment variables
-        System.clearProperty("NSCR_AUTH_ENABLED")
-        System.clearProperty("NSCR_AUTH_USERNAME")
-        System.clearProperty("NSCR_AUTH_PASSWORD")
     }
     
     @Test
     fun `test root endpoint is not protected`() {
-        // Enable auth
-        System.setProperty("NSCR_AUTH_ENABLED", "true")
-        System.setProperty("NSCR_AUTH_USERNAME", "testuser")
-        System.setProperty("NSCR_AUTH_PASSWORD", "testpass")
-        
-        // Create new app with auth enabled using unique database path
-        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-root-${UUID.randomUUID()}")
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
+        createApp(authEnabled = true)
         
         JavalinTest.test(app.app) { _, client ->
             // Root endpoint should be accessible without auth
@@ -96,11 +112,5 @@ class BasicAuthTest {
             // Should return HTML content (web interface) or "Hello World" if web interface disabled
             assertTrue(body?.contains("<!DOCTYPE html>") == true || body == "Hello World")
         }
-        
-        app.stop()
-        // Clear environment variables
-        System.clearProperty("NSCR_AUTH_ENABLED")
-        System.clearProperty("NSCR_AUTH_USERNAME")
-        System.clearProperty("NSCR_AUTH_PASSWORD")
     }
 }
