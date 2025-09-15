@@ -5,7 +5,7 @@ const fs = require('fs');
 const isWatch = process.argv.includes('--watch');
 
 const buildOptions = {
-  entryPoints: ['src/index.ts'],
+  entryPoints: ['src/index.ts', 'src/styles.css'],
   bundle: true,
   outdir: 'dist',
   format: 'esm',
@@ -16,7 +16,11 @@ const buildOptions = {
     '.css': 'css',
     '.png': 'file',
     '.jpg': 'file',
-    '.svg': 'file'
+    '.svg': 'file',
+    '.woff': 'file',
+    '.woff2': 'file',
+    '.ttf': 'file',
+    '.eot': 'file'
   },
   define: {
     'process.env.NODE_ENV': isWatch ? '"development"' : '"production"'

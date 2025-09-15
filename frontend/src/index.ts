@@ -1,4 +1,5 @@
-// Bootstrap is loaded via CDN in the HTML template
+// Import Bootstrap JavaScript
+import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 
 interface RegistryStats {
   repositories: number;
@@ -513,27 +514,87 @@ class RegistryWebInterface {
               <div class="col-md-6 mb-3">
                 <div class="card">
                   <div class="card-body">
-                    <h6 class="card-title">${repo.name}</h6>
-                    <p class="card-text">
-                      <span class="badge bg-secondary">${repo.tags.length} tags</span>
-                    </p>
-                    ${repo.tags.length > 0 ? `
-                      <div class="mt-2">
-                        <small class="text-muted">Latest tags:</small><br>
-                        ${repo.tags.slice(0, 3).map(tag => 
-                          `<span class="badge bg-light text-dark me-1">${tag}</span>`
-                        ).join('')}
-                        ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}                                                                                        
-                      </div>
-                    ` : ''}
-                  </div>
-                </div>
-              </div>
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div class="flex-grow-1">
+                        <h6 class="card-title">${repo.name}</h6>
+                        <p class="card-text">
+                          <span class="badge bg-secondary">${repo.tags.length} tags</span>
+                        </p>
+                        ${repo.tags.length > 0 ? `
+                          <div class="mt-2">
+                            <small class="text-muted">Latest tags:</small><br>
+                            ${repo.tags.slice(0, 3).map(tag => 
+                              `<span class="badge bg-light text-dark me-1">${tag}</span>`
+                            ).join('')}
+                            ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}                                                                                        
+            </div>
+                        ` : ''}
+            </div>
+                      <div class="ms-2">
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteRepository('${repo.name}')" title="Delete repository">
+                          <i class="bi bi-trash"></i>
+                        </button>
+          </div>
+        </div>
+      </div>
+        </div>
+      </div>
             `).join('')}
           </div>
         </div>
       </div>
     `;
+  }
+
+  public async deleteRepository(repositoryName: string) {
+    // Show confirmation dialog
+    const confirmed = confirm(
+      `Are you sure you want to delete the repository "${repositoryName}"?\n\n` +
+      'This will permanently delete:\n' +
+      '• All tags in this repository\n' +
+      '• All manifests\n' +
+      '• All associated blobs (if not referenced by other repositories)\n\n' +
+      'This action cannot be undone.'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/v2/${repositoryName}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        this.showAlert(`
+          <strong>Repository Deleted Successfully!</strong><br>
+          Repository: ${repositoryName}<br>
+          Manifests deleted: ${result.manifestsDeleted || 'Unknown'}
+        `, 'success');
+        
+        // Refresh the repositories list
+        this.loadRepositories();
+        
+        // Refresh the dashboard to update stats
+        this.loadDashboard();
+        
+      } else if (response.status === 404) {
+        this.showAlert(`Repository "${repositoryName}" not found`, 'warning');
+        // Refresh the repositories list in case it was already deleted
+        this.loadRepositories();
+      } else {
+        const errorText = await response.text();
+        this.showAlert(`Failed to delete repository "${repositoryName}": ${response.status} ${errorText}`, 'danger');
+      }
+      
+    } catch (error) {
+      this.showAlert(`Failed to delete repository "${repositoryName}": ${error}`, 'danger');
+    }
   }
 
   private formatBytes(bytes: number): string {
@@ -557,7 +618,7 @@ class RegistryWebInterface {
       container.insertBefore(alertDiv, container.firstChild);
       
       // Auto-dismiss after 5 seconds
-      setTimeout(() => {
+    setTimeout(() => {
         if (alertDiv.parentNode) {
           alertDiv.remove();
         }
@@ -588,8 +649,8 @@ class RegistryWebInterface {
     });
 
     this.eventSource.addEventListener('log', (event) => {
-      const logEntry: LogEntry = JSON.parse(event.data);
-      this.addLogEntry(logEntry);
+        const logEntry: LogEntry = JSON.parse(event.data);
+        this.addLogEntry(logEntry);
     });
 
     this.eventSource.onerror = (error) => {
@@ -614,7 +675,7 @@ class RegistryWebInterface {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
-      this.updateLogStreamStatus(false);
+    this.updateLogStreamStatus(false);
       this.updateLiveIndicator(false);
       this.updateReconnectStatus('Disconnected');
     }
@@ -644,8 +705,8 @@ class RegistryWebInterface {
           <span class="log-timestamp">${timestamp}</span>
           <span class="log-level">${log.level}</span>
           <span class="log-logger">${log.logger}</span>
-          <span class="log-message">${this.escapeHtml(log.message)}</span>
-        </div>
+        <span class="log-message">${this.escapeHtml(log.message)}</span>
+      </div>
       `;
     }).join('');
 
@@ -675,10 +736,10 @@ class RegistryWebInterface {
   private updateLogStreamStatus(connected: boolean) {
     const statusElement = document.getElementById('log-stream-status');
     if (statusElement) {
-      if (connected) {
+        if (connected) {
         statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
         statusElement.className = 'badge bg-success';
-      } else {
+        } else {
         statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
         statusElement.className = 'badge bg-danger';
       }
@@ -721,7 +782,7 @@ class RegistryWebInterface {
     if (this.reconnectAttempts <= this.maxReconnectAttempts) {
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s
       delay = Math.min(Math.pow(2, this.reconnectAttempts - 1) * 1000, 300000);
-    } else {
+      } else {
       // After max attempts, use 5-minute intervals
       delay = 300000; // 5 minutes
     }
@@ -756,7 +817,17 @@ class RegistryWebInterface {
   }
 }
 
+// Global reference to the interface instance
+let registryInterface: RegistryWebInterface;
+
+// Global function for repository deletion (called from HTML onclick)
+function deleteRepository(repositoryName: string) {
+  if (registryInterface) {
+    registryInterface.deleteRepository(repositoryName);
+  }
+}
+
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-  new RegistryWebInterface('app');
+  registryInterface = new RegistryWebInterface('app');
 });

@@ -8,8 +8,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.2",
-    "@popperjs/core": "^2.11.8"
+    "bootstrap-icons": "^1.13.1"
   },
   "devDependencies": {
     "esbuild": "^0.19.8",
