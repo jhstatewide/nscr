@@ -1,16 +1,23 @@
 import com.statewidesoftware.nscr.RegistryServerApp
+import com.statewidesoftware.nscr.blobstore.H2BlobStore
 import io.javalin.testtools.JavalinTest
 import mu.KotlinLogging
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.util.UUID
 
 class ServerLifecycleTest {
 
     @Test
     fun testServerStartupAndShutdown() {
         val logger = KotlinLogging.logger {}
-        val app = RegistryServerApp(logger)
+        // Use unique database path for this test
+        val uniqueDbPath = Paths.get("./tmp/test-data/server-lifecycle-test-${UUID.randomUUID()}")
+        val blobStore = H2BlobStore(uniqueDbPath)
+        val app = RegistryServerApp(logger, blobStore)
         
         // Test that the server can be created and started
         val javalinApp = app.app

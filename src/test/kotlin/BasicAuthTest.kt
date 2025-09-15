@@ -7,14 +7,18 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import java.util.Base64
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.util.UUID
 
 class BasicAuthTest {
     private lateinit var app: RegistryServerApp
     
-    fun setUp() {
+    fun setUp(uniqueId: String = UUID.randomUUID().toString()) {
         // Set up test environment with auth disabled
         System.setProperty("NSCR_AUTH_ENABLED", "false")
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore())
+        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-$uniqueId")
+        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
     }
     
     fun tearDown() {
@@ -27,7 +31,7 @@ class BasicAuthTest {
     
     @Test
     fun `test registry access without auth when disabled`() {
-        setUp()
+        setUp("no-auth-${UUID.randomUUID()}")
         JavalinTest.test(app.app) { _, client ->
             val response = client.get("/v2")
             assertEquals(200, response.code)
@@ -42,8 +46,9 @@ class BasicAuthTest {
         System.setProperty("NSCR_AUTH_USERNAME", "testuser")
         System.setProperty("NSCR_AUTH_PASSWORD", "testpass")
         
-        // Create new app with auth enabled
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore())
+        // Create new app with auth enabled using unique database path
+        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-with-auth-${UUID.randomUUID()}")
+        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
         
         JavalinTest.test(app.app) { _, client ->
             // Test without auth - should fail
@@ -79,7 +84,9 @@ class BasicAuthTest {
         System.setProperty("NSCR_AUTH_USERNAME", "testuser")
         System.setProperty("NSCR_AUTH_PASSWORD", "testpass")
         
-        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore())
+        // Create new app with auth enabled using unique database path
+        val uniqueDbPath = Paths.get("./tmp/test-data/basic-auth-test-root-${UUID.randomUUID()}")
+        app = RegistryServerApp(KotlinLogging.logger {  }, H2BlobStore(uniqueDbPath))
         
         JavalinTest.test(app.app) { _, client ->
             // Root endpoint should be accessible without auth

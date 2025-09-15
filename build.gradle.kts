@@ -33,6 +33,7 @@ dependencies {
     implementation("org.jdbi", "jdbi3-kotlin", "3.49.5")
     implementation("org.jdbi", "jdbi3-kotlin-sqlobject", "3.49.5")
     api("com.google.code.gson:gson:2.13.2")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     implementation("com.github.docker-java:docker-java-core:3.6.0")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.6.0")
     implementation("org.slf4j:slf4j-api:2.0.12")

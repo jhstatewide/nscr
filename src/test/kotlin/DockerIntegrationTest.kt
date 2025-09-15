@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import java.time.Duration
+import java.net.ServerSocket
 
 
 class DockerIntegrationTest {
@@ -45,8 +46,13 @@ class DockerIntegrationTest {
 
     @Test
     fun testDocker() {
+        // Find an available port dynamically
+        val serverSocket = ServerSocket(0)
+        val availablePort = serverSocket.localPort
+        serverSocket.close()
+        
         val config: DockerClientConfig = DefaultDockerClientConfig.createDefaultConfigBuilder()
-            .withRegistryUrl("http://localhost:7000")
+            .withRegistryUrl("http://localhost:$availablePort")
             .withCustomSslConfig(null)
             .build()
         val httpClient: DockerHttpClient = ApacheDockerHttpClient.Builder()
@@ -65,18 +71,18 @@ class DockerIntegrationTest {
             println(it.id)
         }
 
-        val hostedTaggedImage = "localhost:7000/ubuntu:20.04"
+        val hostedTaggedImage = "localhost:$availablePort/ubuntu:20.04"
 
         val cb = ResultCallback.Adapter<PullResponseItem>()
         dockerClient.pullImageCmd("ubuntu:20.04").exec(cb).awaitCompletion()
         cb.awaitCompletion()
 
-        dockerClient.tagImageCmd("ubuntu:20.04", "localhost:7000/ubuntu", "20.04").exec()
+        dockerClient.tagImageCmd("ubuntu:20.04", "localhost:$availablePort/ubuntu", "20.04").exec()
 
         val logger = KotlinLogging.logger {  }
         logger.info { "I am debugging!" }
         val blobStore = H2BlobStore(testBlobStoreDirectory)
-        RegistryServerApp(logger, blobStore).start(7000)
+        RegistryServerApp(logger, blobStore).start(availablePort)
 
         // get number of blobs from blobStore
         val numBlobs = blobStore.countBlobs()
