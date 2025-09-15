@@ -35,6 +35,15 @@ class RegistryWebInterface {
   private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
   private reconnectTimeout: number | null = null;
   private isManualDisconnect = false;
+  
+  // Pagination state
+  private allRepositories: string[] = [];
+  private currentPage = 1;
+  private repositoriesPerPage = 12; // Show 12 repositories per page (3 rows of 4)
+  
+  // Auto-refresh state
+  private dashboardRefreshInterval: number | null = null;
+  private dashboardRefreshIntervalMs = 3000; // Refresh every 3 seconds
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -56,6 +65,7 @@ class RegistryWebInterface {
       this.eventSource.close();
       this.eventSource = null;
     }
+    this.stopDashboardAutoRefresh();
   }
 
   private async initializeApp() {
@@ -164,6 +174,9 @@ class RegistryWebInterface {
     this.loadDashboard();
     this.loadRepositories();
     this.loadLogs();
+    
+    // Start auto-refresh for dashboard stats
+    this.startDashboardAutoRefresh();
 
     // Setup logout if authenticated
     if (this.isAuthenticated) {
@@ -183,6 +196,9 @@ class RegistryWebInterface {
       
       const stats: RegistryStats = await response.json();
       this.renderDashboard(stats);
+      
+      // Update last refresh time
+      this.updateLastRefreshTime();
     } catch (error) {
       container.innerHTML = `
         <div class="alert alert-danger">
@@ -200,7 +216,12 @@ class RegistryWebInterface {
     container.innerHTML = `
       <div class="row">
         <div class="col-12">
-          <h2>Registry Status</h2>
+          <div class="d-flex justify-content-between align-items-center">
+            <h2>Registry Status</h2>
+            <div class="text-muted small">
+              <i class="bi bi-arrow-clockwise"></i> Auto-refresh: <span id="last-refresh-time">--:--:--</span>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -458,7 +479,9 @@ class RegistryWebInterface {
       if (!response.ok) throw new Error('Failed to load repositories');
       
       const data = await response.json();
-      this.renderRepositories(data.repositories);
+      this.allRepositories = data.repositories || [];
+      this.currentPage = 1; // Reset to first page when loading new data
+      this.renderRepositories();
     } catch (error) {
       container.innerHTML = `
         <div class="alert alert-warning">
@@ -469,11 +492,11 @@ class RegistryWebInterface {
     }
   }
 
-  private async renderRepositories(repositories: string[]) {
+  private async renderRepositories() {
     const container = document.getElementById('repositories-container');
     if (!container) return;
 
-    if (repositories.length === 0) {
+    if (this.allRepositories.length === 0) {
       container.innerHTML = `
         <div class="card">
           <div class="card-header">
@@ -487,9 +510,15 @@ class RegistryWebInterface {
       return;
     }
 
+    // Calculate pagination
+    const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+    const startIndex = (this.currentPage - 1) * this.repositoriesPerPage;
+    const endIndex = Math.min(startIndex + this.repositoriesPerPage, this.allRepositories.length);
+    const currentRepositories = this.allRepositories.slice(startIndex, endIndex);
+
     // Load tags for each repository
     const repositoryData = await Promise.all(
-      repositories.map(async (repo) => {
+      currentRepositories.map(async (repo) => {
         try {
           const response = await fetch(`/v2/${repo}/tags/list`);
           if (response.ok) {
@@ -505,8 +534,28 @@ class RegistryWebInterface {
 
     container.innerHTML = `
       <div class="card">
-        <div class="card-header">
-          <h5 class="mb-0">Repositories (${repositories.length})</h5>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            Repositories (${this.allRepositories.length} total)
+            ${this.allRepositories.length > this.repositoriesPerPage ? 
+              ` - Page ${this.currentPage} of ${totalPages} (${startIndex + 1}-${endIndex})` : 
+              ''
+            }
+          </h5>
+          ${this.allRepositories.length > this.repositoriesPerPage ? `
+            <div class="btn-group pagination-controls" role="group">
+              <button type="button" class="btn btn-outline-secondary btn-sm" 
+                      onclick="changePage(${this.currentPage - 1})" 
+                      ${this.currentPage <= 1 ? 'disabled' : ''}>
+                <i class="bi bi-chevron-left"></i> Previous
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" 
+                      onclick="changePage(${this.currentPage + 1})" 
+                      ${this.currentPage >= totalPages ? 'disabled' : ''}>
+                Next <i class="bi bi-chevron-right"></i>
+              </button>
+            </div>
+          ` : ''}
         </div>
         <div class="card-body">
           <div class="row">
@@ -546,6 +595,14 @@ class RegistryWebInterface {
     `;
   }
 
+  public changePage(page: number) {
+    const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+    if (page >= 1 && page <= totalPages) {
+      this.currentPage = page;
+      this.renderRepositories();
+    }
+  }
+
   public async deleteRepository(repositoryName: string) {
     // Show confirmation dialog
     const confirmed = confirm(
@@ -577,16 +634,30 @@ class RegistryWebInterface {
           Manifests deleted: ${result.manifestsDeleted || 'Unknown'}
         `, 'success');
         
-        // Refresh the repositories list
-        this.loadRepositories();
+        // Remove the repository from our local list and adjust pagination
+        this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
+        
+        // Adjust current page if we're now on an empty page
+        const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+        if (this.currentPage > totalPages && totalPages > 0) {
+          this.currentPage = totalPages;
+        }
+        
+        // Re-render the repositories list
+        this.renderRepositories();
         
         // Refresh the dashboard to update stats
         this.loadDashboard();
         
       } else if (response.status === 404) {
         this.showAlert(`Repository "${repositoryName}" not found`, 'warning');
-        // Refresh the repositories list in case it was already deleted
-        this.loadRepositories();
+        // Remove from local list and refresh in case it was already deleted
+        this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
+        const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
+        if (this.currentPage > totalPages && totalPages > 0) {
+          this.currentPage = totalPages;
+        }
+        this.renderRepositories();
       } else {
         const errorText = await response.text();
         this.showAlert(`Failed to delete repository "${repositoryName}": ${response.status} ${errorText}`, 'danger');
@@ -815,19 +886,49 @@ class RegistryWebInterface {
       }
     }
   }
+
+  private startDashboardAutoRefresh() {
+    this.stopDashboardAutoRefresh(); // Clear any existing interval
+    this.dashboardRefreshInterval = window.setInterval(() => {
+      this.loadDashboard();
+    }, this.dashboardRefreshIntervalMs);
+    console.log(`Started dashboard auto-refresh every ${this.dashboardRefreshIntervalMs}ms`);
+  }
+
+  private stopDashboardAutoRefresh() {
+    if (this.dashboardRefreshInterval) {
+      clearInterval(this.dashboardRefreshInterval);
+      this.dashboardRefreshInterval = null;
+      console.log('Stopped dashboard auto-refresh');
+    }
+  }
+
+  private updateLastRefreshTime() {
+    const refreshElement = document.getElementById('last-refresh-time');
+    if (refreshElement) {
+      const now = new Date();
+      refreshElement.textContent = now.toLocaleTimeString();
+    }
+  }
 }
 
 // Global reference to the interface instance
 let registryInterface: RegistryWebInterface;
 
-// Global function for repository deletion (called from HTML onclick)
-function deleteRepository(repositoryName: string) {
-  if (registryInterface) {
-    registryInterface.deleteRepository(repositoryName);
-  }
-}
-
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   registryInterface = new RegistryWebInterface('app');
+  
+  // Attach global functions to window object for HTML onclick handlers
+  (window as any).deleteRepository = (repositoryName: string) => {
+    if (registryInterface) {
+      registryInterface.deleteRepository(repositoryName);
+    }
+  };
+  
+  (window as any).changePage = (page: number) => {
+    if (registryInterface) {
+      registryInterface.changePage(page);
+    }
+  };
 });

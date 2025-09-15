@@ -7,6 +7,21 @@ body {
     background-color: #f8f9fa;
 }
 
+/* Pagination styles */
+.pagination-info {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.pagination-controls .btn {
+    min-width: 100px;
+}
+
+.pagination-controls .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .live-indicator {
     display: flex;
     align-items: center;
