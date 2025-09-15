@@ -5,174 +5,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NSCR Registry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body {
             background-color: #f8f9fa;
         }
-        .hero {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 4rem 0;
+        
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.8rem;
+            font-weight: bold;
         }
-        .card {
-            border: none;
-            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #dc3545;
+            animation: pulse 2s infinite;
         }
-        .status-badge {
-            font-size: 0.875rem;
+        
+        .live-indicator.live-active .live-dot {
+            background-color: #28a745;
+        }
+        
+        .live-indicator.live-inactive .live-dot {
+            background-color: #6c757d;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .log-viewer {
+            height: 400px;
+            overflow-y: auto;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            padding: 10px;
+        }
+        
+        .log-entry {
+            margin-bottom: 2px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .log-timestamp {
+            color: #888;
+            margin-right: 10px;
+        }
+        
+        .log-level {
+            font-weight: bold;
+            margin-right: 10px;
+            min-width: 60px;
+            display: inline-block;
+        }
+        
+        .log-logger {
+            color: #aaa;
+            margin-right: 10px;
+            font-size: 0.8rem;
+        }
+        
+        .log-message {
+            color: #fff;
+        }
+        
+        .log-error {
+            background-color: rgba(220, 53, 69, 0.2);
+        }
+        
+        .log-error .log-level {
+            color: #dc3545;
+        }
+        
+        .log-warn {
+            background-color: rgba(255, 193, 7, 0.2);
+        }
+        
+        .log-warn .log-level {
+            color: #ffc107;
+        }
+        
+        .log-info {
+            background-color: rgba(13, 202, 240, 0.2);
+        }
+        
+        .log-info .log-level {
+            color: #0dcaf0;
+        }
+        
+        .log-debug {
+            background-color: rgba(108, 117, 125, 0.2);
+        }
+        
+        .log-debug .log-level {
+            color: #6c757d;
+        }
+        
+        .log-trace {
+            background-color: rgba(111, 66, 193, 0.2);
+        }
+        
+        .log-trace .log-level {
+            color: #6f42c1;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <strong>NSCR</strong> Registry
-            </a>
-        </div>
-    </nav>
-
-    <div class="hero">
-        <div class="container text-center">
-            <h1 class="display-4 mb-4">NSCR Docker Registry</h1>
-            <p class="lead mb-4">A lightweight, high-performance Docker registry implementation</p>
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <div class="card">
-                        <div class="card-body">
-                            <h5 class="card-title">Registry Status</h5>
-                            <div id="status" class="text-center">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading registry status...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="container mt-5">
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">Quick Start</h5>
-                        <p class="card-text">Get started with the NSCR registry:</p>
-                        <div class="mb-3">
-                            <label class="form-label">Pull an image:</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" value="docker pull localhost:7000/alpine:latest" readonly>
-                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard(this.previousElementSibling)">Copy</button>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Push an image:</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" value="docker push localhost:7000/myimage:latest" readonly>
-                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard(this.previousElementSibling)">Copy</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">Registry Information</h5>
-                        <div id="registry-info">
-                            <p class="text-muted">Loading registry information...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
+    <div id="app"></div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="index.js"></script>
-    <script>
-        function copyToClipboard(input) {
-            input.select();
-            input.setSelectionRange(0, 99999);
-            document.execCommand('copy');
-            
-            // Show feedback
-            const button = input.nextElementSibling;
-            const originalText = button.textContent;
-            button.textContent = 'Copied!';
-            button.classList.remove('btn-outline-secondary');
-            button.classList.add('btn-success');
-            
-            setTimeout(() => {
-                button.textContent = originalText;
-                button.classList.remove('btn-success');
-                button.classList.add('btn-outline-secondary');
-            }, 2000);
-        }
-
-        // Load registry status
-        async function loadRegistryStatus() {
-            try {
-                const response = await fetch('/api/web/status');
-                const data = await response.json();
-                
-                document.getElementById('status').innerHTML = `
-                    <div class="row">
-                        <div class="col-6">
-                            <div class="text-center">
-                                <h3 class="text-primary">${data.repositories}</h3>
-                                <small class="text-muted">Repositories</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-center">
-                                <h3 class="text-success">${data.totalManifests}</h3>
-                                <small class="text-muted">Manifests</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mt-3">
-                        <div class="col-6">
-                            <div class="text-center">
-                                <h3 class="text-info">${data.totalBlobs}</h3>
-                                <small class="text-muted">Blobs</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-center">
-                                <h3 class="text-warning">${data.unreferencedBlobs}</h3>
-                                <small class="text-muted">Unreferenced</small>
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                document.getElementById('registry-info').innerHTML = `
-                    <ul class="list-unstyled">
-                        <li><strong>Registry URL:</strong> <code>localhost:7000</code></li>
-                        <li><strong>Last GC Run:</strong> ${new Date(data.lastGcRun).toLocaleString()}</li>
-                        <li><strong>Estimated Space to Free:</strong> ${(data.estimatedSpaceToFree / 1024 / 1024).toFixed(2)} MB</li>
-                        <li><strong>Active Log Streams:</strong> ${data.logStreamClients}</li>
-                    </ul>
-                `;
-            } catch (error) {
-                document.getElementById('status').innerHTML = `
-                    <div class="alert alert-danger">
-                        <strong>Error:</strong> Failed to load registry status
-                    </div>
-                `;
-                console.error('Failed to load registry status:', error);
-            }
-        }
-
-        // Load status on page load
-        loadRegistryStatus();
-        
-        // Refresh status every 30 seconds
-        setInterval(loadRegistryStatus, 30000);
-    </script>
+    <script type="module" src="/static/index.js"></script>
 </body>
 </html>
