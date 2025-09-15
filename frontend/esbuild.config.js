@@ -1,5 +1,6 @@
 const esbuild = require('esbuild');
 const path = require('path');
+const fs = require('fs');
 
 const isWatch = process.argv.includes('--watch');
 
@@ -22,11 +23,25 @@ const buildOptions = {
   }
 };
 
+// Copy HTML file to dist directory
+function copyHtmlFile() {
+  const srcHtml = path.join(__dirname, 'src', 'index.html');
+  const distHtml = path.join(__dirname, 'dist', 'index.html');
+  
+  if (fs.existsSync(srcHtml)) {
+    fs.copyFileSync(srcHtml, distHtml);
+    console.log('Copied index.html to dist/');
+  }
+}
+
 if (isWatch) {
   esbuild.context(buildOptions).then(ctx => {
     ctx.watch();
+    copyHtmlFile();
     console.log('Watching for changes...');
   });
 } else {
-  esbuild.build(buildOptions).catch(() => process.exit(1));
+  esbuild.build(buildOptions).then(() => {
+    copyHtmlFile();
+  }).catch(() => process.exit(1));
 }
