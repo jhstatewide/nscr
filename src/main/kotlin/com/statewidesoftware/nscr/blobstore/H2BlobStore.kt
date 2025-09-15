@@ -798,13 +798,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 val removedBlobDigests = unreferencedDigests.toSet()
                 logger.info("Blobs removed in Step 3: ${removedBlobDigests.size}")
                 
-                // Find manifests that reference blobs that no longer exist
-                val manifestsWithMissingBlobs = handle.createQuery("""
+                // Find all manifests to check for orphaned blob references
+                val allManifests = handle.createQuery("""
                     SELECT m.name, m.tag, m.digest, m.manifest
                     FROM manifests m
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM blobs b WHERE b.digest = m.digest
-                    )
                 """).map { rs, _ ->
                     val name = rs.getString("name")
                     val tag = rs.getString("tag")
@@ -813,9 +810,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     listOf(name, tag, digest, manifest)
                 }.list()
                 
-                logger.info("Found ${manifestsWithMissingBlobs.size} manifests that reference missing blobs")
+                logger.info("Found ${allManifests.size} manifests to check for orphaned blob references")
                 
-                for (manifestData in manifestsWithMissingBlobs) {
+                for (manifestData in allManifests) {
                     val name = manifestData[0]
                     val tag = manifestData[1]
                     val digest = manifestData[2]
@@ -826,19 +823,25 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         
                         // Check if this manifest references any blobs that were NEVER stored
                         // (not just blobs that were removed in Step 3)
+                        logger.info("Checking manifest $name:$tag for orphaned blobs. Manifest references: $manifestBlobDigests")
+                        logger.info("Referenced digests: $referencedDigests")
+                        logger.info("Removed blob digests: $removedBlobDigests")
+                        
                         val hasNeverStoredBlobs = manifestBlobDigests.any { blobDigest ->
-                            // This blob was never stored if:
-                            // 1. It's not in the referencedDigests set (wasn't referenced by any manifest)
-                            // 2. It's not in the removedBlobDigests set (wasn't removed in Step 3)
-                            // 3. It doesn't exist in the current blobs table
-                            !referencedDigests.contains(blobDigest) && 
-                            !removedBlobDigests.contains(blobDigest) &&
-                            (handle.createQuery("SELECT 1 FROM blobs WHERE digest = :digest")
+                            // This blob was never stored if it doesn't exist in the current blobs table
+                            // and wasn't removed in Step 3 (legitimately garbage collected)
+                            val notRemoved = !removedBlobDigests.contains(blobDigest)
+                            val notExists = (handle.createQuery("SELECT 1 FROM blobs WHERE digest = :digest")
                                 .bind("digest", blobDigest)
                                 .map { rs, _ -> rs.getInt(1) }
                                 .firstOrNull()?.let { it > 0 } ?: false).not()
+                            
+                            logger.info("Blob $blobDigest: notRemoved=$notRemoved, notExists=$notExists")
+                            
+                            notRemoved && notExists
                         }
                         
+                        logger.info("hasNeverStoredBlobs: $hasNeverStoredBlobs")
                         if (hasNeverStoredBlobs) {
                             val deleted = handle.createUpdate("""
                                 DELETE FROM manifests 
