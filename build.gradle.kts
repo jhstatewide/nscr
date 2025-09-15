@@ -208,3 +208,42 @@ tasks.register<JavaExec>("tortureTestQuick") {
     standardOutput = System.out
     errorOutput = System.err
 }
+
+// Profiling task for JVisualVM and Java Mission Control
+tasks.register<JavaExec>("runProfile") {
+    group = "application"
+    description = "Run the server with profiling enabled for JVisualVM and Java Mission Control"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ServerKt")
+    
+    // JVM arguments for profiling
+    jvmArgs = listOf(
+        // Enable JMX for JVisualVM and Java Mission Control
+        "-Dcom.sun.management.jmxremote",
+        "-Dcom.sun.management.jmxremote.port=9999",
+        "-Dcom.sun.management.jmxremote.authenticate=false",
+        "-Dcom.sun.management.jmxremote.ssl=false",
+        "-Dcom.sun.management.jmxremote.local.only=false",
+        
+        // Enable JFR (Java Flight Recorder) for detailed profiling
+        "-XX:+FlightRecorder",
+        
+        // Additional profiling-friendly JVM settings
+        "-XX:+UnlockDiagnosticVMOptions",
+        "-XX:+DebugNonSafepoints",
+        
+        // Memory settings for better profiling visibility
+        "-Xmx2g",
+        "-Xms1g",
+        
+        // GC logging for analysis (Java 17 compatible)
+        "-XX:+UseG1GC",
+        "-Xlog:gc*:gc-profile.log:time"
+    )
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
