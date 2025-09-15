@@ -130,3 +130,71 @@ tasks.register<Exec>("devFrontend") {
     workingDir = file("frontend")
     commandLine("yarn", "dev")
 }
+
+// Registry Torture Test task
+tasks.register<JavaExec>("tortureTest") {
+    group = "testing"
+    description = "Run registry torture test - randomly performs operations and validates correctness"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
+    
+    // Default arguments - can be overridden with -Pargs
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "50"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "2000"
+    val outputFile = project.findProperty("torture.outputFile") as String?
+    
+    args = listOfNotNull(registryUrl, maxOperations, operationDelayMs, outputFile)
+    
+    // Ensure the registry is built
+    dependsOn("build")
+    
+    // Set up logging
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
+// Extended torture test with more operations
+tasks.register<JavaExec>("tortureTestExtended") {
+    group = "testing"
+    description = "Run extended registry torture test with more operations and longer duration"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
+    
+    // Extended test parameters
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "200"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "1000"
+    val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-extended-report.txt"
+    
+    args = listOf(registryUrl, maxOperations, operationDelayMs, outputFile)
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
+// Quick torture test for CI/CD
+tasks.register<JavaExec>("tortureTestQuick") {
+    group = "testing"
+    description = "Run quick registry torture test for CI/CD pipelines"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
+    
+    // Quick test parameters
+    val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
+    val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "20"
+    val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "500"
+    val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-quick-report.txt"
+    
+    args = listOf(registryUrl, maxOperations, operationDelayMs, outputFile)
+    
+    dependsOn("build")
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
