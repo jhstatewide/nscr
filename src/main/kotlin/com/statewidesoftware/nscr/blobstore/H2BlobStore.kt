@@ -48,9 +48,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         this.jdbi = Jdbi.create(dataSource)
         provisionTables()
         
-        logger.info("H2BlobStore initialized with database path: ${dataDirectory.toAbsolutePath()}")
-        logger.info("Database user: ${Config.DATABASE_USER}, max connections: ${Config.DATABASE_MAX_CONNECTIONS}")
-        logger.info("Database URL: $dbUrl")
+        logger.debug("H2BlobStore initialized with database path: ${dataDirectory.toAbsolutePath()}")
+        logger.debug("Database user: ${Config.DATABASE_USER}, max connections: ${Config.DATABASE_MAX_CONNECTIONS}")
+        logger.debug("Database URL: $dbUrl")
         
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
@@ -74,7 +74,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             }
             
             handle.commit()
-            logger.info("H2 Blobstore initialized!")
+            logger.debug("H2 Blobstore initialized!")
         }
     }
 
@@ -694,7 +694,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             return
         }
         
-        logger.info("Starting periodic incomplete upload cleanup (interval: ${Config.CLEANUP_INTERVAL_MINUTES} minutes)")
+        logger.debug("Starting periodic incomplete upload cleanup (interval: ${Config.CLEANUP_INTERVAL_MINUTES} minutes)")
         
         cleanupExecutor.scheduleAtFixedRate({
             try {
