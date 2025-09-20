@@ -4,6 +4,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.AppenderBase
 import io.javalin.http.sse.SseClient
 import java.util.concurrent.ConcurrentLinkedQueue
+import mu.KotlinLogging
 
 /**
  * Custom logback appender that broadcasts log events to SSE clients
@@ -12,14 +13,15 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
     
     companion object {
         private val logClients = ConcurrentLinkedQueue<SseClient>()
+        private val logger = KotlinLogging.logger { "SseLogAppender" }
         
         fun addClient(client: SseClient) {
             logClients.add(client)
             client.onClose { 
                 logClients.remove(client)
-                println("SSE client disconnected. Remaining clients: ${logClients.size}")
+                logger.info { "SSE client disconnected. Remaining clients: ${logClients.size}" }
             }
-            println("SSE client connected. Total clients: ${logClients.size}")
+            logger.info { "SSE client connected. Total clients: ${logClients.size}" }
         }
         
         fun removeClient(client: SseClient) {
