@@ -42,6 +42,8 @@ dependencies {
     implementation("io.github.microutils:kotlin-logging-jvm:2.1.20")
     // pull in mockk
     testImplementation("io.mockk:mockk:1.14.5")
+    testImplementation("org.testcontainers:testcontainers:4.15.0")
+    testImplementation("org.testcontainers:junit-jupiter:4.15.0")
 }
 
 tasks.test {
