@@ -92,14 +92,16 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         try {
             // Count only blobs without digests (chunk blobs), not the final stitched blob
             handle.createQuery("SELECT COUNT(*) as blobCount from blobs where sessionID = :sessionID AND digest IS NULL")
-                .bind("sessionID", sessionID.id).map { rs, _ -> rs.getInt("blobCount") }.first() ?: 0
-            } catch (e: SQLException) {
-                logger.error("SQL error in blobCountForSession for ${sessionID.id}: ${e.message}", e)
-                throw e
-            } catch (e: Exception) {
-                logger.error("Error in blobCountForSession for ${sessionID.id}: ${e.message}", e)
-                throw e
-            }
+                .bind("sessionID", sessionID.id)
+                .map { rs, _ -> rs.getInt("blobCount") }
+                .firstOrNull() ?: 0
+        } catch (e: SQLException) {
+            logger.error("SQL error in blobCountForSession for ${sessionID.id}: ${e.message}", e)
+            throw e
+        } catch (e: Exception) {
+            logger.error("Error in blobCountForSession for ${sessionID.id}: ${e.message}", e)
+            throw e
+        }
     }
 
     @Throws(Exception::class)
@@ -193,7 +195,8 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     val blobContent = handle.createQuery("SELECT content FROM blobs WHERE sessionID = :sessionID")
                         .bind("sessionID", sessionID.id)
                         .map { rs, _ -> rs.getBinaryStream("content") }
-                        .first()
+                        .firstOrNull()
+                        ?: throw NoSuchElementException("Blob not found for session ${sessionID.id}")
                     
                     // Calculate digest of the blob content
                     val tempFile = File.createTempFile("digest_validation", "tmp")
@@ -228,9 +231,6 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     }
                 } catch (e: SQLException) {
                     logger.error("SQL error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
-                    throw e
-                } catch (e: NoSuchElementException) {
-                    logger.error("Blob not found for session ${sessionID.id}: ${e.message}", e)
                     throw e
                 } catch (e: Exception) {
                     logger.error("Error in associateBlobWithSession for ${sessionID.id}: ${e.message}", e)
@@ -380,7 +380,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
 
     @Throws(Exception::class)
     override fun getManifest(image: ImageVersion): String {
-        return jdbi.withHandle<String?, Exception> { handle ->
+        return jdbi.withHandle<String, Exception> { handle ->
             try {
                 if (image.tag.startsWith("sha256:")) {
                     logger.debug("Looking up by digest!")
@@ -391,6 +391,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         .map { rs, _ ->
                             rs.getString("manifest")
                         }.firstOrNull()
+                        ?: error("Cannot find manifest for $image!")
                 } else {
                     val query = "select manifest from manifests where name = :name and tag = :tag;"
                     handle.createQuery(query)
@@ -399,6 +400,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         .map { rs, _ ->
                             rs.getString("manifest")
                         }.firstOrNull()
+                        ?: error("Cannot find manifest for $image!")
                 }
             } catch (e: SQLException) {
                 logger.error("SQL error in getManifest for $image: ${e.message}", e)
@@ -407,7 +409,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 logger.error("Error in getManifest for $image: ${e.message}", e)
                 throw e
             }
-        } ?: error("Cannot find manifest for $image!")
+        }
     }
 
     @Throws(Exception::class)
@@ -432,7 +434,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
 
     @kotlin.jvm.Throws(Exception::class)
     override fun digestForManifest(image: ImageVersion): Digest {
-        return jdbi.withHandle<Digest?, Exception> { handle ->
+        return jdbi.withHandle<Digest, Exception> { handle ->
             try {
                 val query = "select digest from manifests where name = :name and tag = :tag;"
                 handle.createQuery(query)
@@ -441,6 +443,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .map { rs, _ ->
                         Digest(rs.getString("digest"))
                     }.firstOrNull()
+                    ?: error("Cannot find manifest for $image!")
             } catch (e: SQLException) {
                 logger.error("SQL error in digestForManifest for $image: ${e.message}", e)
                 throw e
@@ -448,7 +451,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 logger.error("Error in digestForManifest for $image: ${e.message}", e)
                 throw e
             }
-        } ?: error("Cannot find manifest for $image!")
+        }
     }
 
     @Throws(Exception::class)
@@ -475,13 +478,11 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("digest", imageVersion.tag)
                     .map { rs, _ ->
                         rs.getBinaryStream("content")
-                    }.first()
+                    }.firstOrNull()
+                    ?: throw NoSuchElementException("Blob not found for digest ${imageVersion.tag}")
                 handler(stream, handle)
             } catch (e: SQLException) {
                 logger.error("SQL error in getBlob for ${imageVersion.tag}: ${e.message}", e)
-                throw e
-            } catch (e: NoSuchElementException) {
-                logger.error("Blob not found for digest ${imageVersion.tag}: ${e.message}", e)
                 throw e
             } catch (e: Exception) {
                 logger.error("Error in getBlob for ${imageVersion.tag}: ${e.message}", e)
@@ -587,17 +588,18 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     }
 
     override fun deleteRepository(repository: String): Int {
-        return jdbi.inTransaction<Int, Exception> { handle ->
+        // Delete all manifests for this repository
+        val deletedManifests = jdbi.inTransaction<Int, Exception> { handle ->
             try {
                 logger.info("Deleting repository: $repository")
                 
                 // Delete all manifests for this repository
-                val deletedManifests = handle.createUpdate("DELETE FROM manifests WHERE name = :name")
+                val deleted = handle.createUpdate("DELETE FROM manifests WHERE name = :name")
                     .bind("name", repository)
                     .execute()
                 
-                logger.info("Deleted $deletedManifests manifests for repository: $repository")
-                deletedManifests
+                logger.info("Deleted $deleted manifests for repository: $repository")
+                deleted
             } catch (e: SQLException) {
                 logger.error("SQL error in deleteRepository for $repository: ${e.message}", e)
                 throw e
@@ -606,6 +608,11 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 throw e
             }
         }
+        
+        // Trigger garbage collection to remove unreferenced blobs
+        garbageCollect()
+        
+        return deletedManifests
     }
 
     /**
@@ -738,22 +745,20 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             try {
                 logger.info("Starting comprehensive garbage collection...")
                 
-                // Step 1: Remove blobs without digests (failed uploads)
+                // Step 1: Remove blobs without digests (failed uploads) - optimized version
                 val nullDigestBlobs = handle.createQuery("""
-                    SELECT digest, LENGTH(content) as size 
+                    SELECT COUNT(*) as count, SUM(LENGTH(content)) as total_size 
                     FROM blobs 
                     WHERE digest IS NULL
                 """).map { rs, _ ->
-                    Pair(rs.getString("digest"), rs.getLong("size"))
-                }.list()
+                    Pair(rs.getInt("count"), rs.getLong("total_size"))
+                }.firstOrNull()
                 
-                for ((digest, size) in nullDigestBlobs) {
-                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL LIMIT 1").execute()
-                    if (deleted > 0) {
-                        blobsRemoved++
-                        spaceFreed += size
-                        logger.debug("Removed blob with null digest (${size} bytes)")
-                    }
+                if (nullDigestBlobs != null) {
+                    val deletedNullDigestBlobs = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL").execute()
+                    blobsRemoved += deletedNullDigestBlobs
+                    spaceFreed += nullDigestBlobs.second
+                    logger.debug("Removed $deletedNullDigestBlobs blobs with null digest, freed ${nullDigestBlobs.second} bytes")
                 }
                 
                 // Step 2: Find all blob digests referenced by manifests
@@ -774,33 +779,32 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 
                 logger.info("Found ${referencedDigests.size} referenced blob digests")
                 
-                // Step 3: Remove unreferenced blobs
-                val allBlobDigests = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NOT NULL")
-                    .map { rs, _ -> rs.getString("digest") }
-                    .list()
+                // Step 3: Remove unreferenced blobs using efficient SQL
+                val unreferencedBlobs = handle.createQuery("""
+                    SELECT COUNT(*) 
+                    FROM blobs 
+                    WHERE digest IS NOT NULL 
+                    AND digest NOT IN (SELECT digest FROM manifests)
+                """).map { rs, _ -> rs.getLong(1) }.firstOrNull()
                 
-                val unreferencedDigests = allBlobDigests.filter { !referencedDigests.contains(it) }
+                val estimatedSpaceToFree = handle.createQuery("""
+                    SELECT SUM(size) 
+                    FROM blobs 
+                    WHERE digest IS NOT NULL 
+                    AND digest NOT IN (SELECT digest FROM manifests)
+                """).map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
                 
-                logger.info("Found ${unreferencedDigests.size} unreferenced blobs to remove")
+                // Remove unreferenced blobs in a single operation
+                val deletedUnreferencedBlobs = handle.createUpdate("""
+                    DELETE FROM blobs 
+                    WHERE digest IS NOT NULL 
+                    AND digest NOT IN (SELECT digest FROM manifests)
+                """).execute()
                 
-                for (digest in unreferencedDigests) {
-                    val blobInfo = handle.createQuery("""
-                        SELECT LENGTH(content) as size 
-                        FROM blobs 
-                        WHERE digest = :digest
-                    """).bind("digest", digest)
-                        .map { rs, _ -> rs.getLong("size") }
-                        .firstOrNull()
-                    
-                    val deleted = handle.createUpdate("DELETE FROM blobs WHERE digest = :digest")
-                        .bind("digest", digest)
-                        .execute()
-                    
-                    if (deleted > 0 && blobInfo != null) {
-                        blobsRemoved++
-                        spaceFreed += blobInfo
-                        logger.debug("Removed unreferenced blob $digest (${blobInfo} bytes)")
-                    }
+                if (deletedUnreferencedBlobs > 0) {
+                    blobsRemoved += deletedUnreferencedBlobs
+                    spaceFreed += estimatedSpaceToFree
+                    logger.debug("Removed $deletedUnreferencedBlobs unreferenced blobs, freed $estimatedSpaceToFree bytes")
                 }
                 
                 // Step 4: Remove truly orphaned manifests (manifests that reference blobs that never existed)
@@ -812,7 +816,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 // not blobs that were correctly identified as unreferenced and removed in Step 3.
                 
                 // First, collect all blob digests that were removed in Step 3
-                val removedBlobDigests = unreferencedDigests.toSet()
+                val removedBlobDigests = mutableSetOf<String>()
                 logger.info("Blobs removed in Step 3: ${removedBlobDigests.size}")
                 
                 // Find all manifests to check for orphaned blob references
@@ -947,78 +951,20 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     WHERE b.digest IS NULL
                 """).map { rs, _ -> rs.getLong(1) }.first()
                 
-                // For unreferenced blobs, use a more efficient approach
-                // Instead of loading all manifests into memory, process them in batches
-                val unreferencedBlobs: Long
-                val estimatedSpaceToFree: Long
+                // For unreferenced blobs, use efficient SQL instead of loading all into memory
+                val unreferencedBlobs = handle.createQuery("""
+                    SELECT COUNT(*) 
+                    FROM blobs 
+                    WHERE digest IS NOT NULL 
+                    AND digest NOT IN (SELECT digest FROM manifests)
+                """).map { rs, _ -> rs.getLong(1) }.first()
                 
-                if (totalManifests == 0L) {
-                    // No manifests means all blobs are unreferenced
-                    unreferencedBlobs = totalBlobs
-                    estimatedSpaceToFree = handle.createQuery("SELECT SUM(size) FROM blobs WHERE digest IS NOT NULL")
-                        .map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
-                } else {
-                    // Process manifests in batches to avoid memory issues
-                    val referencedDigests = mutableSetOf<String>()
-                    val batchSize = 100 // Process 100 manifests at a time
-                    var offset = 0
-                    
-                    while (true) {
-                        val manifestBatch = handle.createQuery("""
-                            SELECT manifest FROM manifests 
-                            ORDER BY name, tag 
-                            LIMIT $batchSize OFFSET $offset
-                        """).map { rs, _ -> rs.getString("manifest") }.list()
-                        
-                        if (manifestBatch.isEmpty()) break
-                        
-                        // Process batch with our fast regex extraction
-                        for (manifestJson in manifestBatch) {
-                            try {
-                                val manifestDigests = extractBlobDigestsFromManifest(manifestJson)
-                                referencedDigests.addAll(manifestDigests)
-                            } catch (e: Exception) {
-                                logger.debug("Failed to parse manifest for stats: ${e.message}")
-                            }
-                        }
-                        
-                        offset += batchSize
-                    }
-                    
-                    // Count unreferenced blobs using efficient SQL
-                    unreferencedBlobs = if (referencedDigests.isEmpty()) {
-                        totalBlobs
-                    } else {
-                        // Use parameterized query to avoid SQL injection and handle large lists
-                        val placeholders = referencedDigests.joinToString(",") { "?" }
-                        handle.createQuery("""
-                            SELECT COUNT(*) FROM blobs 
-                            WHERE digest IS NOT NULL 
-                            AND digest NOT IN ($placeholders)
-                        """).apply {
-                            referencedDigests.forEachIndexed { index, digest ->
-                                bind(index, digest)
-                            }
-                        }.map { rs, _ -> rs.getLong(1) }.first()
-                    }
-                    
-                    // Calculate space to free for unreferenced blobs
-                    estimatedSpaceToFree = if (referencedDigests.isEmpty()) {
-                        handle.createQuery("SELECT SUM(size) FROM blobs WHERE digest IS NOT NULL")
-                            .map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
-                    } else {
-                        val placeholders = referencedDigests.joinToString(",") { "?" }
-                        handle.createQuery("""
-                            SELECT SUM(size) FROM blobs 
-                            WHERE digest IS NOT NULL 
-                            AND digest NOT IN ($placeholders)
-                        """).apply {
-                            referencedDigests.forEachIndexed { index, digest ->
-                                bind(index, digest)
-                            }
-                        }.map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
-                    }
-                }
+                val estimatedSpaceToFree = handle.createQuery("""
+                    SELECT SUM(size) 
+                    FROM blobs 
+                    WHERE digest IS NOT NULL 
+                    AND digest NOT IN (SELECT digest FROM manifests)
+                """).map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
                 
                 GarbageCollectionStats(
                     totalBlobs = totalBlobs,
