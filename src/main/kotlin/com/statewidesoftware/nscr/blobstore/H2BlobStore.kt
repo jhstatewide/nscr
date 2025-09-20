@@ -661,13 +661,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 
                 // Remove blobs for incomplete sessions
                 for (sessionId in incompleteSessions) {
-                    val sessionBlobs = handle.createQuery("""
-                        SELECT LENGTH(content) as size 
+                    val totalSize = handle.createQuery("""
+                        SELECT SUM(LENGTH(content)) as total_size 
                         FROM blobs 
                         WHERE sessionID = :sessionID
                     """).bind("sessionID", sessionId)
-                        .map { rs, _ -> rs.getLong("size") }
-                        .list()
+                        .map { rs, _ -> rs.getLong("total_size") }
+                        .firstOrNull() ?: 0L
                     
                     val deleted = handle.createUpdate("DELETE FROM blobs WHERE sessionID = :sessionID")
                         .bind("sessionID", sessionId)
@@ -675,9 +675,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     
                     if (deleted > 0) {
                         blobsRemoved += deleted
-                        spaceFreed += sessionBlobs.sum()
+                        spaceFreed += totalSize
                         sessionsRemoved++
-                        logger.debug("Removed $deleted blobs from incomplete session $sessionId (${sessionBlobs.sum()} bytes)")
+                        logger.debug("Removed $deleted blobs from incomplete session $sessionId ($totalSize bytes)")
                     }
                 }
                 
@@ -780,19 +780,17 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 logger.info("Found ${referencedDigests.size} referenced blob digests")
                 
                 // Step 3: Remove unreferenced blobs using efficient SQL
-                val unreferencedBlobs = handle.createQuery("""
-                    SELECT COUNT(*) 
+                val unreferencedBlobsAndSpace = handle.createQuery("""
+                    SELECT COUNT(*) as count, SUM(size) as total_size 
                     FROM blobs 
                     WHERE digest IS NOT NULL 
                     AND digest NOT IN (SELECT digest FROM manifests)
-                """).map { rs, _ -> rs.getLong(1) }.firstOrNull()
+                """).map { rs, _ -> 
+                    Pair(rs.getLong("count"), rs.getLong("total_size"))
+                }.firstOrNull() ?: Pair(0L, 0L)
                 
-                val estimatedSpaceToFree = handle.createQuery("""
-                    SELECT SUM(size) 
-                    FROM blobs 
-                    WHERE digest IS NOT NULL 
-                    AND digest NOT IN (SELECT digest FROM manifests)
-                """).map { rs, _ -> rs.getLong(1) ?: 0L }.firstOrNull() ?: 0L
+                val unreferencedBlobs = unreferencedBlobsAndSpace.first
+                val estimatedSpaceToFree = unreferencedBlobsAndSpace.second
                 
                 // Remove unreferenced blobs in a single operation
                 val deletedUnreferencedBlobs = handle.createUpdate("""
@@ -817,7 +815,6 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 
                 // First, collect all blob digests that were removed in Step 3
                 val removedBlobDigests = mutableSetOf<String>()
-                logger.info("Blobs removed in Step 3: ${removedBlobDigests.size}")
                 
                 // Find all manifests to check for orphaned blob references
                 val allManifests = handle.createQuery("""
@@ -832,6 +829,8 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 }.list()
                 
                 logger.info("Found ${allManifests.size} manifests to check for orphaned blob references")
+                
+                logger.info("Blobs removed in Step 3: ${removedBlobDigests.size}")
                 
                 for (manifestData in allManifests) {
                     val name = manifestData[0]
