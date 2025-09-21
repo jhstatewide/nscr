@@ -43,6 +43,14 @@ We first need to get a session ID. We get this by doing a POST to `/v2/<image-na
 - ✅ **Storage Management** - Monitor and reclaim storage space
 - ✅ **Management Tools** - Command-line interface for registry operations
 
+## Documentation
+
+- **[doc/](doc/)** - Comprehensive documentation including:
+  - [Authentication Guide](doc/AUTHENTICATION.md) - Setting up authentication
+  - [Test Cleanup Guide](doc/TEST_CLEANUP.md) - Managing test artifacts
+  - [Torture Testing](doc/TORTURE_TEST_README.md) - Advanced testing strategies
+  - [AI Development](doc/AGENTS.md) - Development workflow with AI agents
+
 ## Scripts
 
 See `scripts/README.md` for detailed information about available management and test scripts.

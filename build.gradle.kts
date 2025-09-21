@@ -409,3 +409,80 @@ tasks.register<Exec>("cleanupAllTestDockerImages") {
     
     commandLine("./scripts/cleanup-docker-images.sh")
 }
+
+// Task to build Docker image of the NSCR project
+tasks.register<Exec>("dockerBuild") {
+    group = "docker"
+    description = "Build Docker image of the NSCR project"
+    
+    doFirst {
+        println("🐳 Building Docker image for NSCR project...")
+        println("📦 This will create a containerized version of the registry")
+    }
+    
+    commandLine("docker", "build", "-t", "nscr:latest", ".")
+    
+    doLast {
+        println("✅ Docker image built successfully!")
+        println("🚀 You can now run: docker run -p 7000:7000 nscr:latest")
+    }
+}
+
+// Task to run the NSCR Docker container
+tasks.register<Exec>("dockerRun") {
+    group = "docker"
+    description = "Run the NSCR Docker container"
+    
+    doFirst {
+        println("🚀 Starting NSCR Docker container...")
+        println("🌐 Registry will be available at http://localhost:7000")
+    }
+    
+    commandLine("docker", "run", "-p", "7000:7000", "--name", "nscr-container", "nscr:latest")
+    
+    doLast {
+        println("✅ NSCR container started!")
+        println("🛑 To stop: docker stop nscr-container")
+        println("🗑️  To remove: docker rm nscr-container")
+    }
+}
+
+// Task to stop and remove the NSCR Docker container
+tasks.register<Exec>("dockerStop") {
+    group = "docker"
+    description = "Stop and remove the NSCR Docker container"
+    
+    doFirst {
+        println("🛑 Stopping NSCR Docker container...")
+    }
+    
+    commandLine("bash", "-c", """
+        docker stop nscr-container 2>/dev/null || echo "Container not running"
+        docker rm nscr-container 2>/dev/null || echo "Container not found"
+    """.trimIndent())
+    
+    doLast {
+        println("✅ NSCR container stopped and removed!")
+    }
+}
+
+// Task to show Docker image information
+tasks.register<Exec>("dockerInfo") {
+    group = "docker"
+    description = "Show information about the NSCR Docker image"
+    
+    doFirst {
+        println("📊 NSCR Docker Image Information")
+        println("================================")
+    }
+    
+    commandLine("docker", "images", "nscr")
+    
+    doLast {
+        println("")
+        println("💡 Usage:")
+        println("   ./gradlew dockerBuild  - Build the image")
+        println("   ./gradlew dockerRun    - Run the container")
+        println("   ./gradlew dockerStop   - Stop the container")
+    }
+}
