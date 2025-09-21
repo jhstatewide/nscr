@@ -990,40 +990,40 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         try {
             logger.info("Starting H2BlobStore cleanup...")
             
-            // Shutdown cleanup executor
+            // Shutdown cleanup executor first
             cleanupExecutor.shutdown()
             if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 logger.warn("Cleanup executor did not terminate gracefully, forcing shutdown")
                 cleanupExecutor.shutdownNow()
             }
             
-            // Execute proper H2 shutdown sequence to terminate MVStore background threads
-            try {
-                // Step 1: Execute SHUTDOWN command to properly close the database
-                jdbi.useHandle<Exception> { handle ->
-                    handle.execute("SHUTDOWN")
-                    logger.info("H2 SHUTDOWN command executed")
+            // Synchronize the database shutdown to prevent concurrent access
+            synchronized(this) {
+                try {
+                    // Execute proper H2 shutdown sequence
+                    jdbi.useHandle<Exception> { handle ->
+                        handle.execute("SHUTDOWN")
+                        logger.info("H2 SHUTDOWN command executed")
+                    }
+                } catch (e: Exception) {
+                    logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
                 }
-            } catch (e: Exception) {
-                logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
-            }
-            
-            // Step 2: Close H2 DataSource connections
-            try {
-                // Force close all connections in the H2 DataSource
-                dataSource.connection.close()
-                logger.info("H2 DataSource connections closed")
-            } catch (e: Exception) {
-                logger.warn("Error closing H2 DataSource connections: ${e.message}")
-            }
-            
-            // Step 3: Force H2 to shutdown and close MVStore background threads
-            try {
-                // This will shutdown the H2 database engine and close all background threads
-                org.h2.Driver.unload()
-                logger.info("H2 database engine unloaded")
-            } catch (e: Exception) {
-                logger.warn("Error unloading H2 database engine: ${e.message}")
+                
+                // Close H2 DataSource connections properly
+                try {
+                    dataSource.connection.close()
+                    logger.info("H2 DataSource connections closed")
+                } catch (e: Exception) {
+                    logger.warn("Error closing H2 DataSource connections: ${e.message}")
+                }
+                
+                // Unload H2 engine
+                try {
+                    org.h2.Driver.unload()
+                    logger.info("H2 database engine unloaded")
+                } catch (e: Exception) {
+                    logger.warn("Error unloading H2 database engine: ${e.message}")
+                }
             }
             
             logger.info("H2BlobStore cleanup completed")
