@@ -76,7 +76,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     private fun provisionTables() {
         try {
             jdbi.useTransaction<RuntimeException> { handle: Handle ->
-                handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
+                handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, uploadedAt bigint, CONSTRAINT unique_digest UNIQUE (digest));")
                 handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
                 
                 // Add size column if it doesn't exist (for existing databases)
@@ -85,6 +85,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 } catch (e: Exception) {
                     // Column might already exist, ignore error
                     logger.debug("Size column already exists or couldn't be added: ${e.message}")
+                }
+                
+                // Add uploadedAt column if it doesn't exist (for existing databases)
+                try {
+                    handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS uploadedAt bigint")
+                } catch (e: Exception) {
+                    // Column might already exist, ignore error
+                    logger.debug("uploadedAt column already exists or couldn't be added: ${e.message}")
                 }
                 
                 handle.commit()
@@ -96,7 +104,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 if (attemptRecovery()) {
                     // Retry initialization after successful recovery
                     jdbi.useTransaction<RuntimeException> { handle: Handle ->
-                        handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
+                        handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, uploadedAt bigint, CONSTRAINT unique_digest UNIQUE (digest));")
                         handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
                         handle.commit()
                         logger.info("H2 Blobstore recovered and reinitialized!")
@@ -177,7 +185,8 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             // get an input stream for the file
             tempFile.inputStream().use { fileInputStream ->
                 jdbi.useTransaction<RuntimeException> { handle ->
-                    val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content, size) values (?, ?, ?, ?)")
+                    val currentTime = System.currentTimeMillis()
+                    val statement = handle.connection.prepareStatement("INSERT INTO blobs(sessionID, blobNumber, content, size, uploadedAt) values (?, ?, ?, ?, ?)")
                     statement.setString(1, sessionID.id)
                     if (blobNumber != null) {
                         statement.setInt(2, blobNumber)
@@ -186,6 +195,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     }
                     statement.setBinaryStream(3, fileInputStream, size)
                     statement.setLong(4, size)
+                    statement.setLong(5, currentTime)
                     val result = statement.executeUpdate()
                     handle.commit()
                     logger.debug("Blob inserted for ${sessionID.id}/${blobNumber}. Result: $result")
@@ -784,20 +794,45 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         .map { rs, _ -> rs.getLong(1) }.first()
                     logger.info("GC DEBUG: Initial state - $initialBlobCount blobs, $initialManifestCount manifests")
                 
-                // Step 1: Remove blobs without digests (failed uploads) - optimized version
-                val nullDigestBlobs = handle.createQuery("""
+                // Step 1: SAFE approach - Only remove blobs without digests that are old enough to be truly orphaned
+                // We'll be conservative to avoid removing blobs from active push sessions
+                // Only remove blobs with null digest that are older than 2 hours (plenty of time for any push to complete)
+                
+                val cutoffTime = System.currentTimeMillis() - (2 * 60 * 60 * 1000) // 2 hours ago
+                
+                val orphanedNullDigestBlobs = handle.createQuery("""
                     SELECT COUNT(*) as count, SUM(LENGTH(content)) as total_size 
                     FROM blobs 
-                    WHERE digest IS NULL
-                """).map { rs, _ ->
+                    WHERE digest IS NULL 
+                    AND (uploadedAt IS NULL OR uploadedAt < ?)
+                """).bind(0, cutoffTime).map { rs, _ ->
                     Pair(rs.getInt("count"), rs.getLong("total_size"))
                 }.firstOrNull()
                 
-                if (nullDigestBlobs != null) {
-                    val deletedNullDigestBlobs = handle.createUpdate("DELETE FROM blobs WHERE digest IS NULL").execute()
-                    blobsRemoved += deletedNullDigestBlobs
-                    spaceFreed += nullDigestBlobs.second
-                    logger.debug("Removed $deletedNullDigestBlobs blobs with null digest, freed ${nullDigestBlobs.second} bytes")
+                if (orphanedNullDigestBlobs != null && orphanedNullDigestBlobs.first > 0) {
+                    val deletedOrphanedBlobs = handle.createUpdate("""
+                        DELETE FROM blobs 
+                        WHERE digest IS NULL 
+                        AND (uploadedAt IS NULL OR uploadedAt < ?)
+                    """).bind(0, cutoffTime).execute()
+                    
+                    blobsRemoved += deletedOrphanedBlobs
+                    spaceFreed += orphanedNullDigestBlobs.second
+                    logger.debug("Removed $deletedOrphanedBlobs orphaned blobs with null digest (older than 2 hours), freed ${orphanedNullDigestBlobs.second} bytes")
+                } else {
+                    logger.debug("No orphaned blobs with null digest found (all are recent and may be part of active uploads)")
+                }
+                
+                // Log how many blobs with null digest we're preserving (likely active uploads)
+                val activeUploadBlobs = handle.createQuery("""
+                    SELECT COUNT(*) as count 
+                    FROM blobs 
+                    WHERE digest IS NULL 
+                    AND (uploadedAt IS NULL OR uploadedAt >= ?)
+                """).bind(0, cutoffTime).map { rs, _ -> rs.getInt("count") }.firstOrNull() ?: 0
+                
+                if (activeUploadBlobs > 0) {
+                    logger.info("GC SAFETY: Preserving $activeUploadBlobs blobs with null digest uploaded within last 2 hours (likely active uploads)")
                 }
                 
                 // Step 2: Find all blob digests referenced by manifests
