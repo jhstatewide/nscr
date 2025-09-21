@@ -12,6 +12,7 @@ import java.time.Duration
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.TimeUnit
 
 /**
  * Registry Torture Test - A comprehensive correctness test that randomly performs
@@ -147,13 +148,24 @@ class RegistryTortureTest(
     private fun executeDockerCommand(vararg args: String): CommandResult {
         val processBuilder = ProcessBuilder("docker", *args)
         processBuilder.redirectErrorStream(false)
-        
-        val process = processBuilder.start()
-        val output = process.inputStream.bufferedReader().readText()
-        val error = process.errorStream.bufferedReader().readText()
-        val exitCode = process.waitFor()
-        
-        return CommandResult(exitCode, output, error)
+
+        return try {
+            val process = processBuilder.start()
+            // Wait up to 30 seconds for the docker command to finish
+            val finished = process.waitFor(30, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                CommandResult(-1, "", "Docker command timed out after 30s")
+            } else {
+                val output = process.inputStream.bufferedReader().readText()
+                val error = process.errorStream.bufferedReader().readText()
+                val exitCode = process.exitValue()
+                CommandResult(exitCode, output, error)
+            }
+        } catch (e: IOException) {
+            // Docker binary not found or failed to start
+            CommandResult(-1, "", "Failed to execute docker command: ${e.message}")
+        }
     }
     
     /**
