@@ -118,17 +118,18 @@ class RegistryTortureTest(
             // Perform random operations
             repeat(maxOperations) { iteration ->
                 val operation = selectRandomOperation()
-                logger.info { "Operation ${iteration + 1}/$maxOperations: $operation" }
+                val progress = String.format("%.1f%%", (iteration + 1) * 100.0 / maxOperations)
+                logger.info { "[$progress] Operation ${iteration + 1}/$maxOperations: $operation" }
                 
                 val result = executeOperation(operation)
                 results.add(result)
                 
-                // Log result
+                // Log result with progress
                 if (result.success && result.validationPassed) {
-                    logger.info { "✓ $operation succeeded and validation passed" }
+                    logger.info { "[$progress] ✓ $operation succeeded and validation passed" }
                     successCount.incrementAndGet()
                 } else {
-                    logger.warn { "✗ $operation failed or validation failed: ${result.message}" }
+                    logger.warn { "[$progress] ✗ $operation failed or validation failed: ${result.message}" }
                     failureCount.incrementAndGet()
                 }
                 
