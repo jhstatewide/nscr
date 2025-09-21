@@ -293,6 +293,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
+        // Debug handler to catch all requests
+        app.before { ctx ->
+            if (ctx.path().startsWith("/v2/") && ctx.method().name == "POST") {
+                logger.info("DEBUG: POST request to ${ctx.path()} - URL: ${ctx.url()}")
+            }
+        }
+
         app.get("/v2") { ctx ->
             logger.info { "Access GET /v2" }
             ctx.header("Docker-Distribution-API-Version", "registry/2.0")
@@ -344,14 +351,18 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         app.post("/v2/{image}/blobs/uploads") { ctx ->
-            logger.debug("Got a post to UPLOADS!")
+            val image = ctx.pathParam("image")
+            logger.info("POST /v2/$image/blobs/uploads - Starting blob upload")
+            logger.info("Request URL: ${ctx.url()}")
+            logger.info("Request method: ${ctx.method()}")
+            logger.info("Request headers: ${ctx.headerMap()}")
             // see if we have the query param 'digest',
             // as in /v2/test/blobs/uploads?digest=sha256:1234
             val digest = ctx.queryParam("digest")
             if (digest != null) {
-                logger.debug("Got a digest: $digest")
+                logger.info("Got a digest: $digest")
                 if (blobStore.hasBlob(Digest(digest))) {
-                    logger.debug("We already have this blob!")
+                    logger.info("We already have this blob!")
                     ctx.status(201)
                     ctx.header("Location", Config.REGISTRY_URL)
                     ctx.result("Created")
@@ -363,12 +374,15 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val sessionID = sessionTracker.newSession()
             val newLocation = "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}"
 
+            // Note: We don't call associateBlobWithSession here even if digest is provided
+            // because no blob chunks have been uploaded yet. The association will happen
+            // later when the blob data is actually uploaded via PATCH requests or when
+            // the upload is finalized via PUT request.
             if (digest != null) {
-                logger.debug("Associating $digest with $sessionID")
-                blobStore.associateBlobWithSession(sessionID, Digest(digest))
+                logger.info("Digest $digest provided for session $sessionID - will be associated when blob data is uploaded")
             }
 
-            logger.debug("Telling the uploader to go to $newLocation")
+            logger.info("Telling the uploader to go to $newLocation")
             ctx.header("Location", newLocation)
             ctx.header("Docker-Upload-UUID", sessionID.id)
             ctx.status(202)
@@ -380,29 +394,44 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val contentRange = ctx.header("Content-Range")
             val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-            logger.debug("Uploading to $sessionID with content range: $contentRange and length: $contentLength")
+            logger.info("PATCH /v2/uploads/$sessionID/$blobNumber - Uploading blob chunk with content range: $contentRange and length: $contentLength")
 
-            val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
+            try {
+                val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
+                logger.info("Successfully uploaded $uploadedBytes bytes for session $sessionID, blob $blobNumber")
 
-            ctx.status(202)
-            // we have to give a location to upload to next...
-            ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
-            ctx.header("Range", "0-${uploadedBytes}")
-            ctx.header("Content-Length", "0")
-            ctx.header("Docker-Upload-UUID", sessionID.id)
-            ctx.result("Accepted")
+                ctx.status(202)
+                // we have to give a location to upload to next...
+                ctx.header("Location", "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}")
+                ctx.header("Range", "0-${uploadedBytes}")
+                ctx.header("Content-Length", "0")
+                ctx.header("Docker-Upload-UUID", sessionID.id)
+                ctx.result("Accepted")
+            } catch (e: Exception) {
+                logger.error("Error uploading blob for session $sessionID, blob $blobNumber", e)
+                ctx.status(500)
+                ctx.result("Internal Server Error: ${e.message}")
+            }
         }
 
         app.put("/v2/uploads/{sessionID}/{blobNumber}") { ctx ->
             val sessionID = SessionID(ctx.pathParam("sessionID"))
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
-            logger.debug("Got a put request for $sessionID/$blobNumber for $digest!")
-            // 201 Created
-            blobStore.associateBlobWithSession(sessionID, digest)
-            ctx.header("Location", Config.REGISTRY_URL)
-            ctx.status(201)
-            ctx.result("Created")
+            logger.info("PUT /v2/uploads/$sessionID/$blobNumber - Finalizing blob upload for digest: $digest")
+            
+            try {
+                // 201 Created
+                blobStore.associateBlobWithSession(sessionID, digest)
+                logger.info("Successfully finalized blob upload for session $sessionID, digest $digest")
+                ctx.header("Location", Config.REGISTRY_URL)
+                ctx.status(201)
+                ctx.result("Created")
+            } catch (e: Exception) {
+                logger.error("Error finalizing blob upload for session $sessionID, digest $digest", e)
+                ctx.status(500)
+                ctx.result("Internal Server Error: ${e.message}")
+            }
         }
 
         app.put("/v2/{name}/manifests/{reference}") { ctx ->

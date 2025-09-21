@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  nscr:
+    image: nscr-app:minimal
+    container_name: nscr-registry
+    ports:
+      - "7000:7000"
+    volumes:
+      # Persistent data storage
+      - nscr_data:/home/app/data
+    environment:
+      # Set the registry URL to your server's external IP or domain
+      - NSCR_REGISTRY_URL=http://localhost:7000  # Change this to your external URL
+      - NSCR_DATABASE_PATH=/home/app/data
+      - NSCR_LOG_LEVEL=INFO
+      - NSCR_GC_ENABLED=true
+      - NSCR_MAX_UPLOAD_SIZE_MB=1024
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/v2/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  nscr_data:
+    driver: local
