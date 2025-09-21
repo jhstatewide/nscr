@@ -92,7 +92,7 @@ class RegistryTortureTest(
         val results = mutableListOf<OperationResult>()
         
         try {
-            // Initial registry check
+            // Initial registry check with retry logic
             if (!checkRegistryHealth()) {
                 throw RuntimeException("Registry is not healthy")
             }
@@ -158,20 +158,29 @@ class RegistryTortureTest(
     
     /**
      * Check if registry is healthy and accessible
+     * Retries up to 5 times with a short delay between attempts.
      */
     private fun checkRegistryHealth(): Boolean {
-        return try {
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create("http://$registryUrl/api/web/status"))
-                .timeout(Duration.ofSeconds(5))
-                .build()
-            
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            response.statusCode() == 200
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to check registry health" }
-            false
+        val maxRetries = 5
+        repeat(maxRetries) { attempt ->
+            try {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://$registryUrl/api/web/status"))
+                    .timeout(Duration.ofSeconds(5))
+                    .build()
+                
+                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                if (response.statusCode() == 200) {
+                    return true
+                }
+            } catch (e: Exception) {
+                logger.warn(e) { "Attempt ${attempt + 1}/$maxRetries failed to check registry health" }
+            }
+            // Wait before next attempt
+            Thread.sleep(500)
         }
+        logger.error { "Registry health check failed after $maxRetries attempts" }
+        return false
     }
     
     /**

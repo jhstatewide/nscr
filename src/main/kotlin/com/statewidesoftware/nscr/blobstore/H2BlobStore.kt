@@ -1000,13 +1000,25 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             // Synchronize the database shutdown to prevent concurrent access
             synchronized(this) {
                 try {
-                    // Execute proper H2 shutdown sequence
-                    jdbi.useHandle<Exception> { handle ->
-                        handle.execute("SHUTDOWN")
-                        logger.info("H2 SHUTDOWN command executed")
+                    // Check if we have a valid connection before attempting shutdown
+                    val connection = dataSource.connection
+                    if (!connection.isClosed) {
+                        // Execute proper H2 shutdown sequence
+                        jdbi.useHandle<Exception> { handle ->
+                            // Use the connection directly to avoid statement creation issues
+                            connection.prepareStatement("SHUTDOWN").execute()
+                            logger.info("H2 SHUTDOWN command executed successfully")
+                        }
+                    } else {
+                        logger.warn("DataSource connection is already closed, skipping shutdown")
                     }
                 } catch (e: Exception) {
-                    logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
+                    if (e.message?.contains("Could not produce statement result") == true) {
+                        // This is the known H2 issue - just log and continue
+                        logger.warn("H2 SHUTDOWN command failed with known error (expected in some cases): ${e.message}")
+                    } else {
+                        logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
+                    }
                 }
                 
                 // Close H2 DataSource connections properly
