@@ -293,12 +293,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
-        // Debug handler to catch all requests
-        app.before { ctx ->
-            if (ctx.path().startsWith("/v2/") && ctx.method().name == "POST") {
-                logger.info("DEBUG: POST request to ${ctx.path()} - URL: ${ctx.url()}")
-            }
-        }
 
         app.get("/v2") { ctx ->
             logger.info { "Access GET /v2" }
@@ -328,10 +322,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             // Extract image name from the wildcard path
             val fullPath = ctx.path()
             val image = fullPath.substringAfter("/v2/").substringBefore("/blobs/uploads")
-            logger.info("POST /v2/$image/blobs/uploads - Starting blob upload")
-            logger.info("Request URL: ${ctx.url()}")
-            logger.info("Request method: ${ctx.method()}")
-            logger.info("Request headers: ${ctx.headerMap()}")
+            logger.debug("POST /v2/$image/blobs/uploads - Starting blob upload")
             // see if we have the query param 'digest',
             // as in /v2/test/blobs/uploads?digest=sha256:1234
             val digest = ctx.queryParam("digest")
@@ -411,7 +402,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val contentRange = ctx.header("Content-Range")
             val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-            logger.info("PATCH /v2/uploads/$sessionID/$blobNumber - Uploading blob chunk with content range: $contentRange and length: $contentLength")
+            logger.debug("PATCH /v2/uploads/$sessionID/$blobNumber - Uploading blob chunk with content range: $contentRange and length: $contentLength")
 
             try {
                 val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
@@ -435,7 +426,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val sessionID = SessionID(ctx.pathParam("sessionID"))
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
-            logger.info("PUT /v2/uploads/$sessionID/$blobNumber - Finalizing blob upload for digest: $digest")
+            logger.debug("PUT /v2/uploads/$sessionID/$blobNumber - Finalizing blob upload for digest: $digest")
             
             try {
                 // 201 Created
