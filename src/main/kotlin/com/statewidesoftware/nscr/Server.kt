@@ -306,23 +306,68 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.result("200 OK")
         }
 
-        app.head("/v2/{image}/blobs/{digest}") { ctx ->
-            val image = ctx.pathParam("image")
+        app.head("/v2/*/blobs/{digest}") { ctx ->
+            val fullPath = ctx.path()
+            val image = fullPath.substringAfter("/v2/").substringBefore("/blobs")
             val digest = Digest(ctx.pathParam("digest"))
             logger.debug("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
             handleBlobExistenceCheck(ctx, digest, logger)
         }
 
-        app.head("/v2/{name}/manifests/{tag}") { ctx ->
-            val name = ctx.pathParam("name")
+        app.head("/v2/*/manifests/{tag}") { ctx ->
+            val fullPath = ctx.path()
+            val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
             logger.debug { "Checking on manifest for $imageVersion" }
             handleManifestExistenceCheck(ctx, imageVersion, logger)
         }
 
-        app.get("/v2/{name}/manifests/{tag}") { ctx ->
-            val name = ctx.pathParam("name")
+        // Helper function to handle blob upload POST requests
+        fun handleBlobUploadPost(ctx: Context) {
+            // Extract image name from the wildcard path
+            val fullPath = ctx.path()
+            val image = fullPath.substringAfter("/v2/").substringBefore("/blobs/uploads")
+            logger.info("POST /v2/$image/blobs/uploads - Starting blob upload")
+            logger.info("Request URL: ${ctx.url()}")
+            logger.info("Request method: ${ctx.method()}")
+            logger.info("Request headers: ${ctx.headerMap()}")
+            // see if we have the query param 'digest',
+            // as in /v2/test/blobs/uploads?digest=sha256:1234
+            val digest = ctx.queryParam("digest")
+            if (digest != null) {
+                logger.info("Got a digest: $digest")
+                if (blobStore.hasBlob(Digest(digest))) {
+                    logger.info("We already have this blob!")
+                    ctx.status(201)
+                    ctx.header("Location", Config.REGISTRY_URL)
+                    ctx.result("Created")
+                    return
+                }
+            }
+
+            // we want to return a session id here...
+            val sessionID = sessionTracker.newSession()
+            val newLocation = "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}"
+
+            // Note: We don't call associateBlobWithSession here even if digest is provided
+            // because no blob chunks have been uploaded yet. The association will happen
+            // later when the blob data is actually uploaded via PATCH requests or when
+            // the upload is finalized via PUT request.
+            if (digest != null) {
+                logger.info("Digest $digest provided for session $sessionID - will be associated when blob data is uploaded")
+            }
+
+            logger.info("Telling the uploader to go to $newLocation")
+            ctx.header("Location", newLocation)
+            ctx.header("Docker-Upload-UUID", sessionID.id)
+            ctx.status(202)
+            ctx.result("OK")
+        }
+
+        app.get("/v2/*/manifests/{tag}") { ctx ->
+            val fullPath = ctx.path()
+            val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
             val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
@@ -350,43 +395,15 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
-        app.post("/v2/{image}/blobs/uploads") { ctx ->
-            val image = ctx.pathParam("image")
-            logger.info("POST /v2/$image/blobs/uploads - Starting blob upload")
-            logger.info("Request URL: ${ctx.url()}")
-            logger.info("Request method: ${ctx.method()}")
-            logger.info("Request headers: ${ctx.headerMap()}")
-            // see if we have the query param 'digest',
-            // as in /v2/test/blobs/uploads?digest=sha256:1234
-            val digest = ctx.queryParam("digest")
-            if (digest != null) {
-                logger.info("Got a digest: $digest")
-                if (blobStore.hasBlob(Digest(digest))) {
-                    logger.info("We already have this blob!")
-                    ctx.status(201)
-                    ctx.header("Location", Config.REGISTRY_URL)
-                    ctx.result("Created")
-                    return@post
-                }
-            }
-
-            // we want to return a session id here...
-            val sessionID = sessionTracker.newSession()
-            val newLocation = "/v2/uploads/${blobStore.nextSessionLocation(sessionID)}"
-
-            // Note: We don't call associateBlobWithSession here even if digest is provided
-            // because no blob chunks have been uploaded yet. The association will happen
-            // later when the blob data is actually uploaded via PATCH requests or when
-            // the upload is finalized via PUT request.
-            if (digest != null) {
-                logger.info("Digest $digest provided for session $sessionID - will be associated when blob data is uploaded")
-            }
-
-            logger.info("Telling the uploader to go to $newLocation")
-            ctx.header("Location", newLocation)
-            ctx.header("Docker-Upload-UUID", sessionID.id)
-            ctx.status(202)
-            ctx.result("OK")
+        // Handler for POST /v2/*/blobs/uploads (without trailing slash)
+        // Using wildcard to capture full image name including slashes
+        app.post("/v2/*/blobs/uploads") { ctx ->
+            handleBlobUploadPost(ctx)
+        }
+        
+        // Handler for POST /v2/*/blobs/uploads/ (with trailing slash)
+        app.post("/v2/*/blobs/uploads/") { ctx ->
+            handleBlobUploadPost(ctx)
         }
 
         app.patch("/v2/uploads/{sessionID}/{blobNumber}") { ctx ->
@@ -434,8 +451,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
-        app.put("/v2/{name}/manifests/{reference}") { ctx ->
-            val name = ctx.pathParam("name")
+        app.put("/v2/*/manifests/{reference}") { ctx ->
+            val fullPath = ctx.path()
+            val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val reference = ctx.pathParam("reference")
             logger.debug("Tackling manifest named $name:$reference!")
 
@@ -467,8 +485,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.result(blobList.toString())
         }
 
-        app.get("/v2/{name}/blobs/{tag}") { ctx ->
-            val name = ctx.pathParam("name")
+        app.get("/v2/*/blobs/{tag}") { ctx ->
+            val fullPath = ctx.path()
+            val name = fullPath.substringAfter("/v2/").substringBefore("/blobs")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
             blobStore.getBlob(imageVersion) { stream, _ ->
@@ -479,8 +498,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         // Docker Registry API v2 endpoints for deletion and management
-        app.delete("/v2/{name}/manifests/{reference}") { ctx ->
-            val name = ctx.pathParam("name")
+        app.delete("/v2/*/manifests/{reference}") { ctx ->
+            val fullPath = ctx.path()
+            val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val reference = ctx.pathParam("reference")
             val imageVersion = ImageVersion(name, reference)
             logger.info("Deleting manifest for $imageVersion")
