@@ -48,6 +48,9 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    
+    // Automatically clean up test data after tests complete
+    finalizedBy("cleanupTestData")
 }
 
 tasks.withType<JavaCompile> {
@@ -377,6 +380,22 @@ tasks.register<Delete>("cleanupTestData") {
 
 // Make cleanupTestData run as part of the clean task
 tasks.named("clean") { dependsOn("cleanupTestData", "cleanupAllTestDockerImages") }
+
+// Task to run the cleanup script (convenience wrapper)
+tasks.register<Exec>("cleanup") {
+    group = "verification"
+    description = "Run the comprehensive cleanup script (test data + Docker images)"
+    
+    commandLine("./cleanup-tests.sh")
+    
+    doFirst {
+        println("🧹 Running comprehensive cleanup...")
+    }
+    
+    doLast {
+        println("✅ Comprehensive cleanup completed!")
+    }
+}
 
 // Task to clean up Docker images created by tests
 tasks.register<Exec>("cleanupDockerImages") {
