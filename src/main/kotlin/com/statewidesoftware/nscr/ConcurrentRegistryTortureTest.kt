@@ -357,7 +357,7 @@ class ConcurrentRegistryTortureTest(
         val image = testImages.random()
         val tag = image.tags.random()
         // Use test-specific prefix to avoid conflicts with real images
-        val testImageName = "nscr-test-${image.name}"
+        val testImageName = "nscr-test-registry-${image.name}"
         val registryImage = "${registryUrl}/${testImageName}:${tag}"
         
         logger.debug { "Worker $workerId - Pushing $registryImage" }

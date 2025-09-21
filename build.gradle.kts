@@ -394,18 +394,18 @@ tasks.register<Exec>("cleanupDockerImages") {
     }
 }
 
-// Task to clean up specific test images (nscr-test-* prefixed images)
+// Task to clean up specific test images (nscr-test-registry-* prefixed images)
 tasks.register<Exec>("cleanupTestDockerImages") {
     group = "verification"
-    description = "Clean up Docker images with nscr-test-* prefix (created by tests)"
+    description = "Clean up Docker images with nscr-test-registry-* prefix (created by tests)"
     
     commandLine("./scripts/cleanup-docker-images.sh")
 }
 
-// Task to clean up all test-related Docker images (both nscr-test-* and localhost:* from old runs)
+// Task to clean up all test-related Docker images (nscr-test-registry-* and localhost:*nscr-test-* from old runs)
 tasks.register<Exec>("cleanupAllTestDockerImages") {
     group = "verification"
-    description = "Clean up all test-related Docker images (nscr-test-* and localhost:* from old runs)"
+    description = "Clean up all test-related Docker images (nscr-test-registry-* and localhost:*nscr-test-* from old runs)"
     
     commandLine("./scripts/cleanup-docker-images.sh")
 }

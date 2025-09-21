@@ -17,7 +17,7 @@ cleanup_images() {
     
     # Get list of images matching the pattern
     local images
-    images=$(docker images --filter "reference=$pattern" --format "{{.Repository}}:{{.Tag}}" 2>/dev/null || true)
+    images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "$pattern" 2>/dev/null || true)
     
     if [ -z "$images" ]; then
         echo "   No $description found"
@@ -44,11 +44,12 @@ cleanup_images() {
     echo "   ✅ $description cleanup completed"
 }
 
-# Clean up nscr-test-* images (new test format)
-cleanup_images "nscr-test-*" "nscr-test-* images"
+# Clean up nscr-test-registry-* images (new test format)
+cleanup_images "nscr-test-registry-*" "nscr-test-registry-* images"
 
-# Clean up localhost:* images (old test format)
-cleanup_images "localhost:*" "localhost:* images"
+# Clean up localhost:* images that contain nscr-test-* (old test format)
+# This is safer than cleaning all localhost:* images
+cleanup_images "localhost:.*nscr-test-" "localhost:*nscr-test-* images"
 
 echo ""
 echo "✅ All test Docker image cleanup completed!"
