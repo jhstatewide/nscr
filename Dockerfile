@@ -97,6 +97,7 @@ EXPOSE 7000
 # Set environment variables
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PORT=7000
+ENV NSCR_REGISTRY_URL=http://localhost:7000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

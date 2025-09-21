@@ -284,8 +284,10 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         app.get("/") { ctx ->
             logger.debug("Got a request to URL: ${ctx.url()}")
             if (Config.WEB_INTERFACE_ENABLED) {
-                // Serve the web interface
-                ctx.html(File("src/main/resources/static/index.html").readText())
+                // Serve the web interface from classpath
+                val htmlContent = this::class.java.getResource("/static/index.html")?.readText()
+                    ?: throw RuntimeException("Web interface HTML not found in classpath")
+                ctx.html(htmlContent)
             } else {
                 ctx.result("Hello World")
             }
