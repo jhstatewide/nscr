@@ -104,4 +104,27 @@ class BlobUploadTest {
             logger.info { "Basic server functionality test passed!" }
         }
     }
+    
+    @Test
+    fun `test blob store basic operations`() {
+        logger.info { "Testing blob store basic operations..." }
+        
+        val session = SessionID("test")
+        // Test basic blob upload
+        val bytesWritten = blobStore.addBlob(session, 1, "test".toByteArray().inputStream())
+        assertEquals(4L, bytesWritten)
+
+        // Test eachBlob functionality
+        var row1Found = false
+        blobStore.eachBlob { blobRow ->
+            logger.info { "BlobRow: $blobRow" }
+            logger.info { "Number: ${blobRow.blobNumber}" }
+            if (blobRow.blobNumber == 1) {
+                row1Found = true
+            }
+        }
+        assertTrue(row1Found, "Blob with number 1 should be found")
+        
+        logger.info { "Blob store basic operations test passed!" }
+    }
 }

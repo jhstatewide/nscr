@@ -128,6 +128,31 @@ class MultiPartUploadTest {
             assertTrue(e.message!!.contains("Digest mismatch"))
         }
     }
+    
+    @Test
+    fun testSimpleMultiPartUpload() {
+        val session = SessionID("test-simple-session")
+        
+        // Upload two chunks
+        val chunk1 = "Hello "
+        val chunk2 = "World!"
+        val fullData = chunk1 + chunk2
+        
+        blobStore.addBlob(session, 0, chunk1.toByteArray().inputStream())
+        blobStore.addBlob(session, 1, chunk2.toByteArray().inputStream())
+        
+        // Calculate digest
+        val digest = Digest("sha256:${calculateSHA256(fullData.toByteArray())}")
+        
+        // Associate with session (should stitch)
+        blobStore.associateBlobWithSession(session, digest)
+        
+        // Verify blob exists
+        assertTrue(blobStore.hasBlob(digest), "Simple multi-part upload should work")
+        
+        // Verify chunks were cleaned up
+        assertEquals(0, blobStore.blobCountForSession(session))
+    }
 
     private fun calculateSHA256(data: ByteArray): String {
         val md = MessageDigest.getInstance("SHA-256")

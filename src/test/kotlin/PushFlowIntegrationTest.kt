@@ -14,11 +14,12 @@ import java.security.MessageDigest
 import java.util.*
 
 /**
- * This test reproduces the exact bug that was reported:
- * "When pushing an image, layers show up as 'unreferenced' and get garbage collected
- * even though they should be referenced by the manifest"
+ * End-to-end push flow integration tests that reproduce real-world scenarios:
+ * - Complete Docker push workflows
+ * - Manifest creation and blob referencing
+ * - Garbage collection after push operations
  */
-class CompletePushFlowTest {
+class PushFlowIntegrationTest {
     
     private lateinit var tempDir: Path
     private lateinit var blobStore: H2BlobStore
