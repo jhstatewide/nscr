@@ -87,6 +87,13 @@ RUN adduser --disabled-password --gecos "" app
 COPY --from=builder --chown=app /home/app/build/libs/ /home/app/libs/
 COPY --from=builder --chown=app /home/app/frontend/dist/ /home/app/frontend/dist/
 
+# Create data directory with proper permissions
+RUN mkdir -p /home/app/data && chown -R app:app /home/app/data
+
+# Copy entrypoint script
+COPY --chown=app:app docker-entrypoint.sh /home/app/entrypoint.sh
+RUN chmod +x /home/app/entrypoint.sh
+
 # Set working directory and user
 WORKDIR /home/app
 USER app
@@ -102,6 +109,9 @@ ENV NSCR_REGISTRY_URL=http://localhost:7000
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7000/v2/ || exit 1
+
+# Set entrypoint to handle permissions
+ENTRYPOINT ["/home/app/entrypoint.sh"]
 
 # Run the application (Shadow plugin creates a fat JAR)
 CMD ["java", "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
@@ -119,6 +129,13 @@ RUN adduser --disabled-password --gecos "" app
 COPY --from=builder --chown=app /home/app/build/libs/ /home/app/libs/
 COPY --from=builder --chown=app /home/app/frontend/dist/ /home/app/frontend/dist/
 
+# Create data directory with proper permissions
+RUN mkdir -p /home/app/data && chown -R app:app /home/app/data
+
+# Copy entrypoint script
+COPY --chown=app:app docker-entrypoint.sh /home/app/entrypoint.sh
+RUN chmod +x /home/app/entrypoint.sh
+
 # Set working directory and user
 WORKDIR /home/app
 USER app
@@ -126,6 +143,9 @@ USER app
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7000/v2/ || exit 1
+
+# Set entrypoint to handle permissions
+ENTRYPOINT ["/home/app/entrypoint.sh"]
 
 # Run with OpenJ9 minimal memory footprint JVM options
 CMD ["java", \
