@@ -126,19 +126,21 @@ USER app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7000/v2/ || exit 1
 
-# Run with OpenJ9 container-optimized JVM options
+# Run with OpenJ9 minimal memory footprint JVM options
 CMD ["java", \
      "-XX:+UseContainerSupport", \
-     "-XX:MaxRAMPercentage=75.0", \
-     "-XX:InitialRAMPercentage=50.0", \
+     "-Xmx128m", \
+     "-Xms64m", \
      "-XX:+IdleTuningGcOnIdle", \
      "-XX:+IdleTuningCompactOnIdle", \
      "-Xtune:virtualized", \
      "-Xcompressedrefs", \
-     "-Xcodecachetotal64m", \
+     "-Xcodecachetotal32m", \
      "-Xshareclasses", \
-     "-XX:SharedCacheHardLimit=200m", \
-     "-Xscmx60m", \
+     "-XX:SharedCacheHardLimit=50m", \
+     "-Xscmx20m", \
      "-Xgcpolicy:gencon", \
      "-Xgc:concurrentScavenge", \
+     "-XX:+UseStringDeduplication", \
+     "-XX:+OptimizeStringConcat", \
      "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
