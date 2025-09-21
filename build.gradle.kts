@@ -413,18 +413,22 @@ tasks.register<Exec>("cleanupAllTestDockerImages") {
 // Task to build Docker image of the NSCR project
 tasks.register<Exec>("dockerBuild") {
     group = "docker"
-    description = "Build Docker image of the NSCR project"
+    description = "Build Docker image of the NSCR project with BuildKit cache mounts"
     
     doFirst {
         println("🐳 Building Docker image for NSCR project...")
         println("📦 This will create a containerized version of the registry")
+        println("⚡ Using BuildKit with cache mounts for faster builds")
     }
     
+    // Enable BuildKit and use cache mounts
+    environment("DOCKER_BUILDKIT", "1")
     commandLine("docker", "build", "-t", "nscr:latest", ".")
     
     doLast {
         println("✅ Docker image built successfully!")
         println("🚀 You can now run: docker run -p 7000:7000 nscr:latest")
+        println("💡 Cache mounts will speed up subsequent builds!")
     }
 }
 

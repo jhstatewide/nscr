@@ -1,40 +1,91 @@
 # Multi-stage build for NSCR (New and Shiny Container Registry)
 FROM ubuntu:22.04 as builder
 
-# Install Java 17 (matching project requirements)
-RUN apt-get update && apt-get install -yq \
+# Update package lists with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update
+
+# Install curl first with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get install -yq curl
+
+# Add Node.js repository
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+
+# Install Java 17 and Node.js with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update && apt-get install -yq \
     openjdk-17-jdk \
-    && rm -rf /var/lib/apt/lists/*
+    nodejs
 
 # Create app user
 RUN adduser --disabled-password --gecos "" app
 
-# Copy Gradle files first (for better caching)
+# Copy Gradle wrapper and configuration files first (rarely change - cached layer)
 COPY --chown=app gradle/ /home/app/gradle/
-COPY --chown=app build.gradle.kts gradle.properties gradlew settings.gradle.kts /home/app/
+COPY --chown=app gradlew /home/app/
+COPY --chown=app gradle.properties settings.gradle.kts /home/app/
 
-# Copy source code
+# Copy build configuration (changes less frequently - cached layer)
+COPY --chown=app build.gradle.kts detekt.yml /home/app/
+
+# Copy frontend dependencies (changes less frequently than source - cached layer)
+COPY --chown=app frontend/package*.json /home/app/frontend/
+
+# Copy source code (changes most frequently - invalidates cache)
 COPY --chown=app src/ /home/app/src/
+COPY --chown=app frontend/src/ /home/app/frontend/src/
+COPY --chown=app frontend/tsconfig.json frontend/esbuild.config.js /home/app/frontend/
 
-# Build the application
+# Set working directory
 WORKDIR /home/app
+
+# Create Gradle directories as root first
+RUN mkdir -p /home/app/.gradle/wrapper/dists && \
+    chown -R app:app /home/app/.gradle
+
+# Switch to app user
 USER app
-RUN ./gradlew build --no-daemon
+
+# Install frontend dependencies with npm cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    cd frontend && npm install
+
+# Build the application (skip tests for Docker image)
+RUN ./gradlew build -x test --no-daemon
 
 # Runtime stage
 FROM ubuntu:22.04
 
-# Install Java 17 runtime and curl for health checks
-RUN apt-get update && apt-get install -yq \
+# Update package lists with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update
+
+# Install curl first with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get install -yq curl
+
+# Add Node.js repository
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+
+# Install Java 17 runtime and Node.js with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get update && apt-get install -yq \
     openjdk-17-jre-headless \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    nodejs
 
 # Create app user
 RUN adduser --disabled-password --gecos "" app
 
-# Copy built application from builder stage
+# Copy built application and frontend from builder stage
 COPY --from=builder --chown=app /home/app/build/libs/ /home/app/libs/
+COPY --from=builder --chown=app /home/app/frontend/dist/ /home/app/frontend/dist/
 
 # Set working directory and user
 WORKDIR /home/app

@@ -51,6 +51,28 @@ We first need to get a session ID. We get this by doing a POST to `/v2/<image-na
   - [Torture Testing](doc/TORTURE_TEST_README.md) - Advanced testing strategies
   - [AI Development](doc/AGENTS.md) - Development workflow with AI agents
 
+## Docker Support
+
+NSCR can be built and run as a Docker container:
+
+```bash
+# Build the Docker image (with BuildKit cache mounts for faster builds)
+./gradlew dockerBuild
+
+# Run the container
+docker run -p 7000:7000 nscr:latest
+
+# Or use the convenient Gradle task
+./gradlew dockerRun
+```
+
+The Docker image includes:
+- Multi-stage build for optimized size
+- BuildKit cache mounts for faster builds
+- Java 17 runtime
+- Node.js for frontend support
+- Health checks
+
 ## Scripts
 
 See `scripts/README.md` for detailed information about available management and test scripts.
