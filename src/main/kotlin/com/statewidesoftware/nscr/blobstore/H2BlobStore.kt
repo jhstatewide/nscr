@@ -36,6 +36,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "blobstore-cleanup").apply { isDaemon = true }
     }
+    private val shutdownLock = Any()
 
     init {
         // Configure H2 with proper shutdown behavior and MVStore settings
