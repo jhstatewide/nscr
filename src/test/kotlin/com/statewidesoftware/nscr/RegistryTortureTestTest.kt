@@ -37,8 +37,19 @@ class RegistryTortureTestTest {
             serverPort = findAvailablePort()
             logger.info { "Starting test server on port $serverPort" }
             
-            // Create a temporary directory for the H2 database
-            val dbPath: Path = Files.createTempDirectory("nscr-test-db")
+            // Create a unique temporary directory for the H2 database to avoid conflicts
+            val dbPath: Path = Files.createTempDirectory("nscr-torture-test-${System.currentTimeMillis()}")
+            logger.info { "Using database path: $dbPath" }
+            
+            // Clean up any existing database files in the directory
+            try {
+                Files.walk(dbPath)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach { Files.deleteIfExists(it) }
+            } catch (e: Exception) {
+                logger.warn { "Could not clean up existing database files: ${e.message}" }
+            }
+            
             val blobStore = H2BlobStore(dbPath)
 
             // Initialise the server application
@@ -54,8 +65,12 @@ class RegistryTortureTestTest {
         @JvmStatic
         fun stopServer() {
             logger.info { "Stopping test server on port $serverPort" }
-            javalin.stop()
-            logger.info { "Test server stopped successfully" }
+            try {
+                serverApp.stop()  // This handles both Javalin and blobstore cleanup
+                logger.info { "Test server stopped successfully" }
+            } catch (e: Exception) {
+                logger.warn { "Error stopping test server: ${e.message}" }
+            }
         }
         
         private fun findAvailablePort(): Int {

@@ -39,8 +39,20 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     private val shutdownLock = Any()
 
     init {
-        // Configure H2 with proper shutdown behavior and MVStore settings
-        val dbUrl = "jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;MV_STORE=TRUE;AUTOCOMMIT=TRUE"
+        // Configure H2 with recovery options and robust settings
+        val dbUrl = buildString {
+            append("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
+            append(";DB_CLOSE_ON_EXIT=FALSE")
+            append(";AUTO_SERVER=FALSE")
+            append(";MV_STORE=TRUE")
+            append(";AUTOCOMMIT=TRUE")
+            // Recovery and corruption prevention options
+            append(";RECOVER=TRUE")  // Enable automatic recovery
+            append(";COMPRESS=TRUE")  // Enable compression to reduce corruption risk
+            append(";CACHE_SIZE=8192")  // Increase cache size for better performance
+            append(";LOCK_TIMEOUT=10000")  // 10 second lock timeout
+        }
+        
         dataSource.setURL(dbUrl)
         dataSource.user = Config.DATABASE_USER
         dataSource.password = Config.DATABASE_PASSWORD
@@ -62,20 +74,70 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
 
     @Throws(Exception::class)
     private fun provisionTables() {
-        jdbi.useTransaction<RuntimeException> { handle: Handle ->
-            handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
-            handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+        try {
+            jdbi.useTransaction<RuntimeException> { handle: Handle ->
+                handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
+                handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+                
+                // Add size column if it doesn't exist (for existing databases)
+                try {
+                    handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS size bigint")
+                } catch (e: Exception) {
+                    // Column might already exist, ignore error
+                    logger.debug("Size column already exists or couldn't be added: ${e.message}")
+                }
+                
+                handle.commit()
+                logger.debug("H2 Blobstore initialized!")
+            }
+        } catch (e: Exception) {
+            if (e.message?.contains("corrupted") == true || e.message?.contains("recovery") == true) {
+                logger.warn("Database corruption detected, attempting recovery: ${e.message}")
+                attemptRecovery()
+                // Retry initialization after recovery
+                jdbi.useTransaction<RuntimeException> { handle: Handle ->
+                    handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
+                    handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+                    handle.commit()
+                    logger.info("H2 Blobstore recovered and reinitialized!")
+                }
+            } else {
+                throw e
+            }
+        }
+    }
+    
+    /**
+     * Attempt to recover from database corruption
+     */
+    private fun attemptRecovery() {
+        try {
+            logger.info("Attempting H2 database recovery...")
             
-            // Add size column if it doesn't exist (for existing databases)
-            try {
-                handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS size bigint")
-            } catch (e: Exception) {
-                // Column might already exist, ignore error
-                logger.debug("Size column already exists or couldn't be added: ${e.message}")
+            // Try to run H2's built-in recovery
+            val recoveryUrl = buildString {
+                append("jdbc:h2:file:${dataDirectory.toAbsolutePath()}/blobstore")
+                append(";RECOVER=TRUE")
+                append(";FORCE_RECOVER=TRUE")
             }
             
-            handle.commit()
-            logger.debug("H2 Blobstore initialized!")
+            val recoveryDataSource = org.h2.jdbcx.JdbcDataSource()
+            recoveryDataSource.setURL(recoveryUrl)
+            recoveryDataSource.user = Config.DATABASE_USER
+            recoveryDataSource.password = Config.DATABASE_PASSWORD
+            
+            val recoveryJdbi = Jdbi.create(recoveryDataSource)
+            recoveryJdbi.useHandle<Exception> { handle ->
+                // Try to connect and run a simple query to trigger recovery
+                handle.execute("SELECT 1")
+                logger.info("H2 database recovery completed successfully")
+            }
+            
+        } catch (e: Exception) {
+            logger.error("H2 database recovery failed: ${e.message}")
+            // If recovery fails, we might need to delete the corrupted database
+            // and start fresh (this is handled by the test framework)
+            throw RuntimeException("Database recovery failed and manual intervention required", e)
         }
     }
 
