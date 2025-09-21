@@ -53,8 +53,9 @@ We first need to get a session ID. We get this by doing a POST to `/v2/<image-na
 
 ## Docker Support
 
-NSCR can be built and run as a Docker container:
+NSCR can be built and run as a Docker container with two JVM options:
 
+### Standard OpenJDK (Default)
 ```bash
 # Build the Docker image (with BuildKit cache mounts for faster builds)
 ./gradlew dockerBuild
@@ -66,12 +67,32 @@ docker run -p 7000:7000 nscr:latest
 ./gradlew dockerRun
 ```
 
-The Docker image includes:
-- Multi-stage build for optimized size
-- BuildKit cache mounts for faster builds
-- Java 17 runtime
-- Node.js for frontend support
-- Health checks
+### IBM Semeru OpenJ9 (Container-Optimized)
+```bash
+# Build the Semeru OpenJ9 Docker image (minimal memory usage)
+./gradlew dockerBuildSemeru
+
+# Run the Semeru container
+docker run -p 7000:7000 nscr:semeru
+
+# Or use the convenient Gradle task
+./gradlew dockerRunSemeru
+```
+
+### Docker Image Features
+- **Multi-stage build** for optimized size
+- **BuildKit cache mounts** for faster builds
+- **Java 17 runtime** (OpenJDK or Semeru OpenJ9)
+- **Node.js** for frontend support
+- **Health checks** for container monitoring
+
+### Semeru OpenJ9 Benefits
+- **Container-aware memory management** (75% of container memory)
+- **Idle memory release** (releases unused memory after 3s idle)
+- **Virtualized tuning** for cloud/container environments
+- **Compressed references** for reduced memory footprint
+- **Class data sharing** for faster startup
+- **Optimized garbage collection** (generational concurrent GC)
 
 ## Scripts
 

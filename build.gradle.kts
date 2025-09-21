@@ -470,6 +470,46 @@ tasks.register<Exec>("dockerStop") {
     }
 }
 
+// Task to build Docker image with IBM Semeru OpenJ9 (container-optimized)
+tasks.register<Exec>("dockerBuildSemeru") {
+    group = "docker"
+    description = "Build Docker image with IBM Semeru OpenJ9 for minimal memory usage"
+    
+    doFirst {
+        println("🐳 Building NSCR Docker image with IBM Semeru OpenJ9...")
+        println("📦 This will create a containerized version optimized for minimal memory usage")
+        println("⚡ Using BuildKit with cache mounts for faster builds")
+    }
+    
+    environment("DOCKER_BUILDKIT", "1")
+    commandLine("docker", "build", "--target", "semeru", "-t", "nscr:semeru", ".")
+    
+    doLast {
+        println("✅ Semeru OpenJ9 Docker image built successfully!")
+        println("🚀 You can now run: docker run -p 7000:7000 nscr:semeru")
+        println("💡 This version uses container-optimized JVM options for minimal memory usage")
+    }
+}
+
+// Task to run the NSCR Docker container with Semeru OpenJ9
+tasks.register<Exec>("dockerRunSemeru") {
+    group = "docker"
+    description = "Run the NSCR Docker container with IBM Semeru OpenJ9"
+    
+    doFirst {
+        println("🚀 Starting NSCR Docker container with IBM Semeru OpenJ9...")
+        println("🌐 Registry will be available at http://localhost:7000")
+        println("💾 Optimized for minimal memory usage and container-friendly behavior")
+    }
+    
+    commandLine("docker", "run", "--rm", "-p", "7000:7000", "--name", "nscr-semeru-container", "nscr:semeru")
+    
+    doLast {
+        println("✅ NSCR Semeru Docker container started successfully!")
+        println("🛑 To stop: docker stop nscr-semeru-container")
+    }
+}
+
 // Task to show Docker image information
 tasks.register<Exec>("dockerInfo") {
     group = "docker"

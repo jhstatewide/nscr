@@ -104,3 +104,41 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run the application (Shadow plugin creates a fat JAR)
 CMD ["java", "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
+
+# Alternative target: OpenJ9 Semeru with container optimization
+FROM icr.io/appcafe/ibm-semeru-runtimes:open-17-jre-jammy as semeru
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -yq curl && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN adduser --disabled-password --gecos "" app
+
+# Copy built application and frontend from builder stage
+COPY --from=builder --chown=app /home/app/build/libs/ /home/app/libs/
+COPY --from=builder --chown=app /home/app/frontend/dist/ /home/app/frontend/dist/
+
+# Set working directory and user
+WORKDIR /home/app
+USER app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:7000/v2/ || exit 1
+
+# Run with OpenJ9 container-optimized JVM options
+CMD ["java", \
+     "-XX:+UseContainerSupport", \
+     "-XX:MaxRAMPercentage=75.0", \
+     "-XX:InitialRAMPercentage=50.0", \
+     "-XX:+IdleTuningGcOnIdle", \
+     "-XX:+IdleTuningCompactOnIdle", \
+     "-Xtune:virtualized", \
+     "-Xcompressedrefs", \
+     "-Xcodecachetotal64m", \
+     "-Xshareclasses", \
+     "-XX:SharedCacheHardLimit=200m", \
+     "-Xscmx60m", \
+     "-Xgcpolicy:gencon", \
+     "-Xgc:concurrentScavenge", \
+     "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
