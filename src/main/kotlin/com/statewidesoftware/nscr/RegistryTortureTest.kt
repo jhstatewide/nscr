@@ -13,6 +13,8 @@ import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.TimeUnit
+import java.io.IOException   // <‑‑ add this line
+import java.net.Socket   // <‑‑ new import for port checking
 
 /**
  * Registry Torture Test - A comprehensive correctness test that randomly performs
@@ -25,6 +27,17 @@ class RegistryTortureTest(
     private val operationDelayMs: Long = 1000
 ) {
     private val logger = KotlinLogging.logger {}
+
+        private fun isPortOpen(host: String, port: Int): Boolean {
+            return try {
+                Socket().use { socket ->
+                    socket.connect(java.net.InetSocketAddress(host, port), 2000)
+                    true
+                }
+            } catch (e: IOException) {
+                false
+            }
+        }
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .build()
@@ -176,18 +189,34 @@ class RegistryTortureTest(
         val maxRetries = 5
         repeat(maxRetries) { attempt ->
             try {
+                val uri = URI.create("http://$registryUrl/api/web/status")
+                logger.debug { "Attempt ${attempt + 1}/$maxRetries: Checking health at $uri" }
+
+                // Resolve hostname to IP for debugging
+                val host = uri.host
+                val port = uri.port.takeIf { it != -1 } ?: 80
+                val ipAddresses = java.net.InetAddress.getAllByName(host).map { it.hostAddress }
+                logger.debug { "Resolved $host to ${ipAddresses.joinToString()}" }
+
+                // Check raw TCP connectivity before HTTP request
+                val tcpOpen = isPortOpen(host, port)
+                logger.debug { "TCP port $port on $host open: $tcpOpen" }
+
                 val request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://$registryUrl/api/web/status"))
+                    .uri(uri)
                     .timeout(Duration.ofSeconds(5))
                     .build()
-                
+
                 val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
                 if (response.statusCode() == 200) {
                     return true
+                } else {
+                    logger.warn { "Health check returned status ${response.statusCode()}, body: ${response.body()}" }
                 }
             } catch (e: Exception) {
                 logger.warn(e) { "Attempt ${attempt + 1}/$maxRetries failed to check registry health" }
             }
+
             // Wait before next attempt
             Thread.sleep(500)
         }
