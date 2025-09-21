@@ -45,4 +45,5 @@ interface Blobstore {
     fun garbageCollect(): GarbageCollectionResult
     fun blobCountForSession(sessionID: SessionID): Int
     fun getGarbageCollectionStats(): GarbageCollectionStats
+    fun attemptRecovery(): Boolean
 }
