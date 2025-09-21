@@ -657,7 +657,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     
                     // Check if this is a database corruption error
                     if (e.message?.contains("File corrupted") == true || e.message?.contains("MVStoreException") == true) {
-                        logger.error("Database corruption detected! Attempting recovery...")
+                        logger.error("Database corruption detected in web status endpoint! Attempting recovery...")
                         if (blobStore is H2BlobStore && blobStore.attemptRecovery()) {
                             logger.info("Database recovery successful, retrying request")
                             try {
@@ -678,7 +678,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                                 logger.error("Retry after recovery failed: ${retryException.message}", retryException)
                             }
                         } else {
-                            logger.error("Database recovery failed - manual intervention required")
+                            // Recovery failed - the H2BlobStore will have already logged detailed diagnostics
+                            // and terminated the application if it was a fatal failure
+                            logger.error("Database recovery failed in web status endpoint - manual intervention required")
                             ctx.status(503)
                             ctx.json(mapOf("error" to "Database corruption detected. Please contact administrator."))
                             return@get

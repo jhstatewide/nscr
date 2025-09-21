@@ -37,6 +37,11 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         Thread(r, "blobstore-cleanup").apply { isDaemon = true }
     }
     private val shutdownLock = Any()
+    
+    // Recovery tracking to prevent infinite retry loops
+    private var recoveryAttempts = 0
+    private val maxRecoveryAttempts = 3
+    private var isRecoveryFailed = false
 
     init {
         // Configure H2 with basic supported settings
@@ -88,13 +93,17 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         } catch (e: Exception) {
             if (e.message?.contains("corrupted") == true || e.message?.contains("recovery") == true) {
                 logger.warn("Database corruption detected, attempting recovery: ${e.message}")
-                attemptRecovery()
-                // Retry initialization after recovery
-                jdbi.useTransaction<RuntimeException> { handle: Handle ->
-                    handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
-                    handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
-                    handle.commit()
-                    logger.info("H2 Blobstore recovered and reinitialized!")
+                if (attemptRecovery()) {
+                    // Retry initialization after successful recovery
+                    jdbi.useTransaction<RuntimeException> { handle: Handle ->
+                        handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, CONSTRAINT unique_digest UNIQUE (digest));")
+                        handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+                        handle.commit()
+                        logger.info("H2 Blobstore recovered and reinitialized!")
+                    }
+                } else {
+                    // Recovery failed - this is fatal
+                    fatalRecoveryFailure(e)
                 }
             } else {
                 throw e
@@ -669,8 +678,6 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             var sessionsRemoved = 0
             
             try {
-                val maxAgeMillis = Config.CLEANUP_MAX_AGE_HOURS * 60 * 60 * 1000L
-                
                 logger.info("Starting incomplete upload cleanup (max age: ${Config.CLEANUP_MAX_AGE_HOURS} hours)")
                 
                 // Find incomplete uploads (sessions with null digests)
@@ -1085,21 +1092,135 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
 
     /**
      * Attempt to recover from database corruption
+     * Returns true if recovery was successful, false if it failed
+     * Will fail fast after maxRecoveryAttempts to prevent infinite loops
      */
     override fun attemptRecovery(): Boolean {
+        // Check if we've already failed recovery
+        if (isRecoveryFailed) {
+            logger.error("Recovery already failed - refusing to attempt again")
+            return false
+        }
+        
+        // Check if we've exceeded max attempts
+        if (recoveryAttempts >= maxRecoveryAttempts) {
+            logger.error("Maximum recovery attempts ($maxRecoveryAttempts) exceeded - marking as failed")
+            isRecoveryFailed = true
+            return false
+        }
+        
+        recoveryAttempts++
+        logger.warn("Attempting database recovery (attempt $recoveryAttempts/$maxRecoveryAttempts)...")
+        
         return try {
-            logger.warn("Attempting database recovery...")
-            
             // Try to open a connection and run a simple query
             jdbi.withHandle<Boolean, Exception> { handle ->
                 handle.createQuery("SELECT 1").map { rs, _ -> rs.getInt(1) }.first()
-                logger.info("Database recovery successful")
+                logger.info("Database recovery successful on attempt $recoveryAttempts")
                 true
             }
         } catch (e: Exception) {
-            logger.error("Database recovery failed: ${e.message}", e)
+            logger.error("Database recovery failed on attempt $recoveryAttempts: ${e.message}", e)
+            
+            // If this was the last attempt, mark as failed
+            if (recoveryAttempts >= maxRecoveryAttempts) {
+                logger.error("All recovery attempts exhausted - marking database as unrecoverable")
+                isRecoveryFailed = true
+            }
+            
             false
         }
+    }
+
+    /**
+     * Handle fatal recovery failure with comprehensive diagnostic information
+     * This method provides detailed information to help diagnose database corruption
+     */
+    private fun fatalRecoveryFailure(originalException: Exception) {
+        logger.error("=".repeat(80))
+        logger.error("FATAL DATABASE CORRUPTION - RECOVERY FAILED")
+        logger.error("=".repeat(80))
+        
+        // Basic information
+        logger.error("Database Path: ${dataDirectory.toAbsolutePath()}")
+        logger.error("Recovery Attempts: $recoveryAttempts/$maxRecoveryAttempts")
+        logger.error("Original Exception: ${originalException.javaClass.simpleName}")
+        logger.error("Original Message: ${originalException.message}")
+        
+        // File system information
+        try {
+            val dbFile = dataDirectory.resolve("blobstore.mv.db")
+            val traceFile = dataDirectory.resolve("blobstore.trace.db")
+            
+            logger.error("Database Files:")
+            logger.error("  blobstore.mv.db exists: ${dbFile.toFile().exists()}")
+            if (dbFile.toFile().exists()) {
+                logger.error("  blobstore.mv.db size: ${dbFile.toFile().length()} bytes")
+                logger.error("  blobstore.mv.db last modified: ${java.util.Date(dbFile.toFile().lastModified())}")
+            }
+            
+            logger.error("  blobstore.trace.db exists: ${traceFile.toFile().exists()}")
+            if (traceFile.toFile().exists()) {
+                logger.error("  blobstore.trace.db size: ${traceFile.toFile().length()} bytes")
+                logger.error("  blobstore.trace.db last modified: ${java.util.Date(traceFile.toFile().lastModified())}")
+            }
+        } catch (e: Exception) {
+            logger.error("Error checking database files: ${e.message}")
+        }
+        
+        // Disk space information
+        try {
+            val fileStore = java.nio.file.Files.getFileStore(dataDirectory)
+            val totalSpace = fileStore.totalSpace
+            val freeSpace = fileStore.usableSpace
+            val usedSpace = totalSpace - freeSpace
+            
+            logger.error("Disk Space Information:")
+            logger.error("  Total Space: ${totalSpace / (1024 * 1024 * 1024)} GB")
+            logger.error("  Free Space: ${freeSpace / (1024 * 1024 * 1024)} GB")
+            logger.error("  Used Space: ${usedSpace / (1024 * 1024 * 1024)} GB")
+            logger.error("  Free Percentage: ${(freeSpace.toDouble() / totalSpace.toDouble()) * 100.0}%")
+        } catch (e: Exception) {
+            logger.error("Error checking disk space: ${e.message}")
+        }
+        
+        // System information
+        logger.error("System Information:")
+        logger.error("  Java Version: ${System.getProperty("java.version")}")
+        logger.error("  OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
+        logger.error("  Available Processors: ${Runtime.getRuntime().availableProcessors()}")
+        logger.error("  Max Memory: ${Runtime.getRuntime().maxMemory() / (1024 * 1024)} MB")
+        logger.error("  Total Memory: ${Runtime.getRuntime().totalMemory() / (1024 * 1024)} MB")
+        logger.error("  Free Memory: ${Runtime.getRuntime().freeMemory() / (1024 * 1024)} MB")
+        
+        // Recovery recommendations
+        logger.error("RECOVERY RECOMMENDATIONS:")
+        logger.error("1. Check disk space - corruption often occurs when disk is full")
+        logger.error("2. Check for hardware issues (bad sectors, failing disk)")
+        logger.error("3. Check system logs for I/O errors or power failures")
+        logger.error("4. If this is a development environment, delete the database files and restart:")
+        logger.error("   rm -f ${dataDirectory.toAbsolutePath()}/blobstore.mv.db")
+        logger.error("   rm -f ${dataDirectory.toAbsolutePath()}/blobstore.trace.db")
+        logger.error("5. If this is production, contact your system administrator")
+        logger.error("6. Consider implementing database backups to prevent data loss")
+        
+        logger.error("=".repeat(80))
+        logger.error("TERMINATING APPLICATION DUE TO UNRECOVERABLE DATABASE CORRUPTION")
+        logger.error("=".repeat(80))
+        
+        // Mark as failed to prevent further attempts
+        isRecoveryFailed = true
+        
+        // Terminate the application
+        System.exit(1)
+    }
+
+    /**
+     * Check if database recovery has failed
+     * This can be used by other parts of the system to avoid operations on a corrupted database
+     */
+    fun isRecoveryFailed(): Boolean {
+        return isRecoveryFailed
     }
 
     /**
@@ -1123,7 +1244,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     val connection = dataSource.connection
                     if (!connection.isClosed) {
                         // Execute proper H2 shutdown sequence
-                        jdbi.useHandle<Exception> { handle ->
+                        jdbi.useHandle<Exception> { _ ->
                             // Use the connection directly to avoid statement creation issues
                             connection.prepareStatement("SHUTDOWN").execute()
                             logger.info("H2 SHUTDOWN command executed successfully")
