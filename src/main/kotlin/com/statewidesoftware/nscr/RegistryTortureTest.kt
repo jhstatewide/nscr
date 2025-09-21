@@ -282,7 +282,9 @@ class RegistryTortureTest(
     private fun executePushOperation(): OperationResult {
         val image = testImages.random()
         val tag = image.tags.random()
-        val registryImage = "${registryUrl}/${image.name}:${tag}"
+        // Use test-specific prefix to avoid conflicts with real images
+        val testImageName = "nscr-test-${image.name}"
+        val registryImage = "${registryUrl}/${testImageName}:${tag}"
         
         logger.debug { "Pushing $registryImage" }
         
@@ -309,14 +311,14 @@ class RegistryTortureTest(
             }
             
             // Update our tracking
-            knownRepositories.add(image.name)
-            knownTags.getOrPut(image.name) { mutableSetOf() }.add(tag)
+            knownRepositories.add(testImageName)
+            knownTags.getOrPut(testImageName) { mutableSetOf() }.add(tag)
             
             // Get stats after operation
             val statsAfter = getRegistryStats()
             
             // Validate state
-            val validationPassed = validatePushOperation(statsBefore, statsAfter, image.name, tag)
+            val validationPassed = validatePushOperation(statsBefore, statsAfter, testImageName, tag)
             
             // Clean up local image
             try {

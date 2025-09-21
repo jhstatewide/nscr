@@ -322,3 +322,90 @@ tasks.register<JavaExec>("runProfile") {
     standardOutput = System.out
     errorOutput = System.err
 }
+
+// Task to clean up test data while preserving .keep file
+tasks.register<Delete>("cleanupTestData") {
+    group = "verification"
+    description = "Clean up test data directories while preserving .keep file"
+    
+    val testDataDir = file("tmp/test-data")
+    
+    doFirst {
+        if (!testDataDir.exists()) {
+            println("📁 Test data directory does not exist: $testDataDir")
+            return@doFirst
+        }
+        
+        val keepFile = file("$testDataDir/.keep")
+        if (!keepFile.exists()) {
+            println("⚠️  Warning: .keep file not found, creating it...")
+            keepFile.writeText("""# This file ensures the tmp/test-data directory is preserved in git
+# Test artifacts are automatically cleaned up but this file remains
+""")
+        }
+        
+        val dirsToDelete = testDataDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        println("🧹 Found ${dirsToDelete.size} test directories to clean up")
+        
+        dirsToDelete.forEach { dir ->
+            println("🗑️  Removing: ${dir.name}")
+        }
+    }
+    
+    // Remove all directories and files except .keep
+    doLast {
+        val cleanupDir = file("tmp/test-data")
+        if (cleanupDir.exists()) {
+            cleanupDir.listFiles()?.forEach { file ->
+                if (file.isDirectory && file.name != ".keep") {
+                    file.deleteRecursively()
+                } else if (file.isFile && file.name != ".keep") {
+                    file.delete()
+                }
+            }
+        }
+        
+        val keepFile = file("tmp/test-data/.keep")
+        if (keepFile.exists()) {
+            println("✅ Cleanup complete! .keep file preserved")
+        } else {
+            println("❌ Error: .keep file was accidentally removed!")
+            throw GradleException(".keep file was removed during cleanup")
+        }
+    }
+}
+
+// Make cleanupTestData run as part of the clean task
+tasks.named("clean") { dependsOn("cleanupTestData", "cleanupAllTestDockerImages") }
+
+// Task to clean up Docker images created by tests
+tasks.register<Exec>("cleanupDockerImages") {
+    group = "verification"
+    description = "Clean up Docker images created by test runs"
+    
+    commandLine("docker", "image", "prune", "-f")
+    
+    doFirst {
+        println("🐳 Cleaning up Docker images created by tests...")
+    }
+    
+    doLast {
+        println("✅ Docker image cleanup completed")
+    }
+}
+
+// Task to clean up specific test images (nscr-test-* prefixed images)
+tasks.register<Exec>("cleanupTestDockerImages") {
+    group = "verification"
+    description = "Clean up Docker images with nscr-test-* prefix (created by tests)"
+    
+    commandLine("./scripts/cleanup-docker-images.sh")
+}
+
+// Task to clean up all test-related Docker images (both nscr-test-* and localhost:* from old runs)
+tasks.register<Exec>("cleanupAllTestDockerImages") {
+    group = "verification"
+    description = "Clean up all test-related Docker images (nscr-test-* and localhost:* from old runs)"
+    
+    commandLine("./scripts/cleanup-docker-images.sh")
+}

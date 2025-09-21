@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.test.assertTrue
 
 /**
@@ -101,5 +102,34 @@ class RegistryTortureTestTest {
         val successfulOps = results.count { it.success }
         val validatedOps = results.count { it.validationPassed }
         logger.info { "Torture test completed: ${results.size} operations, $successfulOps successful, $validatedOps validated" }
+    }
+    
+    /**
+     * Cleanup method that can be called manually or from other tests
+     */
+    fun cleanupTestData() {
+        val testDataDir = Paths.get("tmp/test-data")
+        if (Files.exists(testDataDir)) {
+            logger.info { "Cleaning up test data directories..." }
+            try {
+                Files.list(testDataDir)
+                    .filter { Files.isDirectory(it) }
+                    .forEach { dir ->
+                        try {
+                            logger.debug { "Removing test directory: ${dir.fileName}" }
+                            Files.walk(dir)
+                                .sorted(Comparator.reverseOrder())
+                                .forEach { path ->
+                                    Files.deleteIfExists(path)
+                                }
+                        } catch (e: Exception) {
+                            logger.warn { "Failed to delete directory $dir: ${e.message}" }
+                        }
+                    }
+                logger.info { "Test data cleanup completed" }
+            } catch (e: Exception) {
+                logger.warn { "Error during test data cleanup: ${e.message}" }
+            }
+        }
     }
 }
