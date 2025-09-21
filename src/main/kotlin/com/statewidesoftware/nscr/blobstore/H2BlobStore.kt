@@ -384,23 +384,20 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     override fun addManifest(image: ImageVersion, digest: Digest, manifestJson: String) {
         jdbi.useTransaction<Exception> { handle ->
             try {
-                // see if the manifest already exists
-                if (hasManifest(image)) {
-                    logger.debug("Manifest already exists for $image, updating...")
-                    handle.createUpdate("DELETE FROM MANIFESTS WHERE name = :name and tag = :tag")
-                        .bind("name", image.name)
-                        .bind("tag", image.tag)
-                        .execute()
-                } else {
-                    logger.debug("Manifest does not exist for $image, inserting...")
-                }
-                handle.createUpdate("INSERT INTO MANIFESTS (name, tag, manifest, digest) values (:name, :tag, :manifest, :digest);")
+                // Use MERGE (UPSERT) to handle the case where manifest already exists
+                // This is atomic and avoids race conditions
+                handle.createUpdate("""
+                    MERGE INTO MANIFESTS (name, tag, manifest, digest) 
+                    KEY (name, tag) 
+                    VALUES (:name, :tag, :manifest, :digest)
+                """)
                     .bind("name", image.name)
                     .bind("tag", image.tag)
                     .bind("manifest", manifestJson)
                     .bind("digest", "sha256:${digest.digestString}")
                     .execute()
-                logger.debug("Manifest added for $image with digest: sha256:${digest.digestString}")
+                
+                logger.debug("Manifest upserted for $image with digest: sha256:${digest.digestString}")
                 handle.commit()
             } catch (e: SQLException) {
                 logger.error("SQL error in addManifest for $image: ${e.message}", e)
