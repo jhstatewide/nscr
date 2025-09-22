@@ -611,7 +611,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             try {
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
-                val activeSessions = sessionTracker.getActiveSessions()
                 
                 val repositoryDetails = repositories.map { repoName ->
                     val tags = blobStore.listTags(repoName)
@@ -635,15 +634,8 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     ),
                     "repositories" to repositoryDetails,
                     "activeSessions" to mapOf(
-                        "count" to activeSessions.size,
-                        "sessions" to activeSessions.map { session ->
-                            mapOf(
-                                "id" to session.id,
-                                "startTime" to session.startTime,
-                                "lastActivity" to session.lastActivity,
-                                "blobCount" to blobStore.blobCountForSession(session.id)
-                            )
-                        }
+                        "count" to 0,
+                        "sessions" to emptyList<Map<String, Any>>()
                     ),
                     "health" to mapOf(
                         "status" to "healthy",
@@ -704,9 +696,10 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val blobList = mutableListOf<Map<String, Any>>()
                 blobStore.eachBlob { blobRow ->
                     blobList.add(mapOf(
-                        "digest" to blobRow.digest,
-                        "size" to blobRow.size,
-                        "created" to blobRow.created
+                        "digest" to (blobRow.digest ?: "unknown"),
+                        "sessionID" to blobRow.sessionID,
+                        "blobNumber" to blobRow.blobNumber,
+                        "size" to blobRow.content.size
                     ))
                 }
                 
@@ -730,20 +723,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             logger.info("Getting active session information...")
             
             try {
-                val activeSessions = sessionTracker.getActiveSessions()
-                val sessionDetails = activeSessions.map { session ->
-                    mapOf(
-                        "id" to session.id,
-                        "startTime" to session.startTime,
-                        "lastActivity" to session.lastActivity,
-                        "blobCount" to blobStore.blobCountForSession(session.id),
-                        "duration" to (System.currentTimeMillis() - session.startTime)
-                    )
-                }
-                
+                // Since SessionTracker doesn't track active sessions, return empty list
+                // This could be enhanced in the future to track active sessions
                 val response = mapOf(
-                    "activeSessions" to sessionDetails,
-                    "totalActiveSessions" to activeSessions.size,
+                    "activeSessions" to emptyList<Map<String, Any>>(),
+                    "totalActiveSessions" to 0,
                     "timestamp" to System.currentTimeMillis()
                 )
                 
@@ -763,7 +747,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             try {
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
-                val activeSessions = sessionTracker.getActiveSessions()
                 
                 // Perform basic connectivity tests
                 val canListRepos = try {
@@ -797,7 +780,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "totalRepositories" to repositories.size,
                         "totalManifests" to gcStats.totalManifests,
                         "totalBlobs" to gcStats.totalBlobs,
-                        "activeSessions" to activeSessions.size,
+                        "activeSessions" to 0, // SessionTracker doesn't track active sessions
                         "logStreamClients" to SseLogAppender.getClientCount()
                     ),
                     "warnings" to if (gcStats.unreferencedBlobs > 0 || gcStats.orphanedManifests > 0) {
