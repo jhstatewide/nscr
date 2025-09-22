@@ -550,6 +550,50 @@ tasks.register<Exec>("dockerInfo") {
     }
 }
 
+// Custom run task with port checking
+tasks.register<JavaExec>("runWithPortCheck") {
+    group = "application"
+    description = "Run the server with port availability check"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ServerKt")
+    
+    dependsOn("build")
+    
+    doFirst {
+        // Check if port is available before starting
+        val port = System.getenv("NSCR_PORT")?.toIntOrNull() ?: 7000
+        
+        // Use lsof to check if port is in use
+        val process = ProcessBuilder("lsof", "-i", ":$port").start()
+        val exitCode = process.waitFor()
+        
+        if (exitCode == 0) {
+            // Port is in use
+            throw GradleException("""
+                ❌ FATAL ERROR: Port $port is already in use!
+                
+                🔍 To find what's using the port, run:
+                   lsof -i :$port
+                   
+                🛑 To kill processes using the port, run:
+                   pkill -f "gradlew run"
+                   
+                💡 Or use a different port:
+                   NSCR_PORT=7001 ./gradlew runWithPortCheck
+            """.trimIndent())
+        } else {
+            // Port is available
+            println("✅ Port $port is available")
+        }
+        
+        println("🚀 Starting NSCR server...")
+    }
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
 // Task to run the server with shutdown endpoint enabled for torture testing
 tasks.register<JavaExec>("runWithShutdown") {
     group = "application"
@@ -564,6 +608,32 @@ tasks.register<JavaExec>("runWithShutdown") {
     dependsOn("build")
     
     doFirst {
+        // Check if port is available before starting
+        val port = System.getenv("NSCR_PORT")?.toIntOrNull() ?: 7000
+        
+        // Use lsof to check if port is in use
+        val process = ProcessBuilder("lsof", "-i", ":$port").start()
+        val exitCode = process.waitFor()
+        
+        if (exitCode == 0) {
+            // Port is in use
+            throw GradleException("""
+                ❌ FATAL ERROR: Port $port is already in use!
+                
+                🔍 To find what's using the port, run:
+                   lsof -i :$port
+                   
+                🛑 To kill processes using the port, run:
+                   pkill -f "gradlew run"
+                   
+                💡 Or use a different port:
+                   NSCR_PORT=7001 ./gradlew runWithShutdown
+            """.trimIndent())
+        } else {
+            // Port is available
+            println("✅ Port $port is available")
+        }
+        
         println("🚀 Starting NSCR server with shutdown endpoint enabled...")
         println("🛑 Shutdown endpoint available at: POST /api/shutdown")
         println("🧪 Perfect for external torture testing!")
