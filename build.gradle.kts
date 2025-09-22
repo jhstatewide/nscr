@@ -549,3 +549,26 @@ tasks.register<Exec>("dockerInfo") {
         println("   ./gradlew dockerStop   - Stop the container")
     }
 }
+
+// Task to run the server with shutdown endpoint enabled for torture testing
+tasks.register<JavaExec>("runWithShutdown") {
+    group = "application"
+    description = "Run the server with shutdown endpoint enabled for external torture testing"
+    
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.statewidesoftware.nscr.ServerKt")
+    
+    // Ensure shutdown endpoint is enabled (it's enabled by default, but being explicit)
+    environment("NSCR_SHUTDOWN_ENDPOINT_ENABLED", "true")
+    
+    dependsOn("build")
+    
+    doFirst {
+        println("🚀 Starting NSCR server with shutdown endpoint enabled...")
+        println("🛑 Shutdown endpoint available at: POST /api/shutdown")
+        println("🧪 Perfect for external torture testing!")
+    }
+    
+    standardOutput = System.out
+    errorOutput = System.err
+}

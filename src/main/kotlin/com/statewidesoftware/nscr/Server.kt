@@ -219,6 +219,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
         
+        
         // Start cleanup task if blobstore supports it
         if (blobStore is H2BlobStore) {
             blobStore.startCleanupTask()
@@ -612,6 +613,24 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
                 
+                // Calculate storage metrics
+                var totalBytes = 0L
+                val uniqueBlobs = mutableSetOf<String>()
+                var uniqueBytes = 0L
+                
+                blobStore.eachBlob { blobRow ->
+                    val blobSize = blobRow.content.size.toLong()
+                    totalBytes += blobSize
+                    
+                    val digest = blobRow.digest
+                    if (digest != null && uniqueBlobs.add(digest)) {
+                        uniqueBytes += blobSize
+                    }
+                }
+                
+                val deduplicationRatio = if (totalBytes > 0) (uniqueBytes.toDouble() / totalBytes.toDouble()) else 0.0
+                val spaceSavings = totalBytes - uniqueBytes
+                
                 val repositoryDetails = repositories.map { repoName ->
                     val tags = blobStore.listTags(repoName)
                     mapOf(
@@ -631,6 +650,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "unreferencedBlobs" to gcStats.unreferencedBlobs,
                         "orphanedManifests" to gcStats.orphanedManifests,
                         "estimatedSpaceToFree" to gcStats.estimatedSpaceToFree
+                    ),
+                    "storage" to mapOf(
+                        "totalBytes" to totalBytes,
+                        "uniqueBytes" to uniqueBytes,
+                        "spaceSavings" to spaceSavings,
+                        "deduplicationRatio" to deduplicationRatio,
+                        "uniqueBlobs" to uniqueBlobs.size
                     ),
                     "repositories" to repositoryDetails,
                     "activeSessions" to mapOf(
@@ -694,17 +720,34 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             
             try {
                 val blobList = mutableListOf<Map<String, Any>>()
+                var totalBytes = 0L
+                val uniqueBlobs = mutableSetOf<String>()
+                var uniqueBytes = 0L
+                
                 blobStore.eachBlob { blobRow ->
+                    val blobSize = blobRow.content.size.toLong()
+                    totalBytes += blobSize
+                    
+                    // Track unique blobs by digest
+                    val digest = blobRow.digest
+                    if (digest != null && uniqueBlobs.add(digest)) {
+                        uniqueBytes += blobSize
+                    }
+                    
                     blobList.add(mapOf(
-                        "digest" to (blobRow.digest ?: "unknown"),
+                        "digest" to (digest ?: "unknown"),
                         "sessionID" to blobRow.sessionID,
                         "blobNumber" to blobRow.blobNumber,
-                        "size" to blobRow.content.size
+                        "size" to blobSize
                     ))
                 }
                 
                 val response = mapOf(
                     "totalBlobs" to blobList.size,
+                    "uniqueBlobs" to uniqueBlobs.size,
+                    "totalBytes" to totalBytes,
+                    "uniqueBytes" to uniqueBytes,
+                    "deduplicationRatio" to if (totalBytes > 0) (uniqueBytes.toDouble() / totalBytes.toDouble()) else 0.0,
                     "blobs" to blobList,
                     "timestamp" to System.currentTimeMillis()
                 )
@@ -715,6 +758,82 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 logger.error("Error getting blob information: ${e.message}", e)
                 ctx.status(500)
                 ctx.json(mapOf("error" to "Failed to get blob information", "message" to e.message))
+            }
+        }
+
+        // Storage statistics API
+        app.get("/api/registry/storage") { ctx ->
+            logger.info("Getting storage statistics...")
+            
+            try {
+                var totalBytes = 0L
+                val uniqueBlobs = mutableSetOf<String>()
+                var uniqueBytes = 0L
+                val blobCounts = mutableMapOf<String, Int>()
+                
+                blobStore.eachBlob { blobRow ->
+                    val blobSize = blobRow.content.size.toLong()
+                    totalBytes += blobSize
+                    
+                    val digest = blobRow.digest
+                    if (digest != null) {
+                        // Count references to each unique blob
+                        blobCounts[digest] = blobCounts.getOrDefault(digest, 0) + 1
+                        
+                        // Track unique blobs
+                        if (uniqueBlobs.add(digest)) {
+                            uniqueBytes += blobSize
+                        }
+                    }
+                }
+                
+                val deduplicationRatio = if (totalBytes > 0) (uniqueBytes.toDouble() / totalBytes.toDouble()) else 0.0
+                val spaceSavings = totalBytes - uniqueBytes
+                val spaceSavingsPercent = if (totalBytes > 0) ((spaceSavings.toDouble() / totalBytes.toDouble()) * 100.0) else 0.0
+                
+                // Find most referenced blobs
+                val blobSizes = mutableMapOf<String, Long>()
+                blobStore.eachBlob { blobRow ->
+                    val digest = blobRow.digest
+                    if (digest != null) {
+                        blobSizes[digest] = blobRow.content.size.toLong()
+                    }
+                }
+                
+                val mostReferencedBlobs = blobCounts.entries
+                    .sortedByDescending { it.value }
+                    .take(10)
+                    .map { (digest, count) ->
+                        mapOf<String, Any>(
+                            "digest" to digest,
+                            "referenceCount" to count,
+                            "size" to (blobSizes[digest] ?: 0L)
+                        )
+                    }
+                
+                val response = mapOf(
+                    "storage" to mapOf(
+                        "totalBytes" to totalBytes,
+                        "uniqueBytes" to uniqueBytes,
+                        "spaceSavings" to spaceSavings,
+                        "spaceSavingsPercent" to spaceSavingsPercent,
+                        "deduplicationRatio" to deduplicationRatio
+                    ),
+                    "blobs" to mapOf(
+                        "totalBlobs" to blobCounts.values.sum(),
+                        "uniqueBlobs" to uniqueBlobs.size,
+                        "averageReferencesPerBlob" to if (uniqueBlobs.isNotEmpty()) (blobCounts.values.sum().toDouble() / uniqueBlobs.size) else 0.0
+                    ),
+                    "mostReferencedBlobs" to mostReferencedBlobs,
+                    "timestamp" to System.currentTimeMillis()
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error getting storage statistics: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to get storage statistics", "message" to e.message))
             }
         }
 

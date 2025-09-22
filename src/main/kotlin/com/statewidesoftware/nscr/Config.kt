@@ -89,6 +89,7 @@ object Config {
                 println("Web Auth Password: ${if (WEB_AUTH_PASSWORD != null) "***SET***" else "NOT SET"}")
             }
         }
+        println("Shutdown Endpoint Enabled: $SHUTDOWN_ENDPOINT_ENABLED")
         println("=========================")
     }
 
