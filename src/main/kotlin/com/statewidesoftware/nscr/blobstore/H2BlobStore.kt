@@ -262,12 +262,41 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                             throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
                         }
                         
-                        // Update the blob with the validated digest
-                        val query = "update blobs set digest = ? where sessionID = ?"
-                        handle.createUpdate(query).bind(0, digest.digestString)
-                            .bind(1, sessionID.id).execute()
-                        
-                        logger.debug("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
+                        // Try to update the blob with the validated digest
+                        // If this fails due to unique constraint violation, it means another session
+                        // already claimed this digest, so we can safely delete this session's blob
+                        try {
+                            val query = "update blobs set digest = ? where sessionID = ?"
+                            val updatedRows = handle.createUpdate(query).bind(0, digest.digestString)
+                                .bind(1, sessionID.id).execute()
+                            
+                            if (updatedRows > 0) {
+                                logger.debug("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
+                            } else {
+                                logger.debug("No blob found for session ${sessionID.id} to update")
+                            }
+                        } catch (e: Exception) {
+                            // Check if this is a unique constraint violation (could be wrapped in UnableToExecuteStatementException)
+                            val isUniqueConstraintViolation = e.message?.contains("Unique index or primary key violation") == true ||
+                                    e.cause?.message?.contains("Unique index or primary key violation") == true
+                            
+                            if (isUniqueConstraintViolation) {
+                                // Another session already claimed this digest - this is a duplicate upload
+                                // We can safely delete this session's blob since the content is identical
+                                logger.debug("Blob with digest ${digest.digestString} already exists, removing duplicate from session ${sessionID.id}")
+                                
+                                val deletedRows = handle.createUpdate("DELETE FROM blobs WHERE sessionID = ?")
+                                    .bind(0, sessionID.id)
+                                    .execute()
+                                
+                                if (deletedRows > 0) {
+                                    logger.debug("Removed duplicate blob from session ${sessionID.id} (digest already exists)")
+                                }
+                            } else {
+                                // Re-throw other exceptions
+                                throw e
+                            }
+                        }
                     } finally {
                         if (tempFile.exists()) {
                             tempFile.delete()
@@ -351,27 +380,52 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     
                     logger.debug("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
 
-                    // Read the stitched blob and insert it as a new blob with the digest
-                    tempFile.inputStream().use { stitchedInputStream ->
-                        val insertStatement = handle.connection.prepareStatement(
-                            "INSERT INTO blobs(sessionID, blobNumber, digest, content, size) VALUES (?, ?, ?, ?, ?)"
+                    // Try to insert the stitched blob with the digest
+                    // If this fails due to unique constraint violation, it means another session
+                    // already claimed this digest, so we can safely delete this session's chunks
+                    try {
+                        tempFile.inputStream().use { stitchedInputStream ->
+                            val insertStatement = handle.connection.prepareStatement(
+                                "INSERT INTO blobs(sessionID, blobNumber, digest, content, size) VALUES (?, ?, ?, ?, ?)"
+                            )
+                            insertStatement.setString(1, sessionID.id)
+                            insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
+                            insertStatement.setString(3, digest.digestString)
+                            insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
+                            insertStatement.setLong(5, stitchedSize)
+                            insertStatement.executeUpdate()
+                        }
+
+                        // Delete the original chunk blobs
+                        val deleteStatement = handle.connection.prepareStatement(
+                            "DELETE FROM blobs WHERE sessionID = ? AND digest IS NULL"
                         )
-                        insertStatement.setString(1, sessionID.id)
-                        insertStatement.setInt(2, 0) // Use 0 as the blob number for the final stitched blob
-                        insertStatement.setString(3, digest.digestString)
-                        insertStatement.setBinaryStream(4, stitchedInputStream, stitchedSize)
-                        insertStatement.setLong(5, stitchedSize)
-                        insertStatement.executeUpdate()
+                        deleteStatement.setString(1, sessionID.id)
+                        val deletedChunks = deleteStatement.executeUpdate()
+
+                        logger.debug("Successfully stitched $deletedChunks chunks into final blob with digest ${digest.digestString}")
+                    } catch (e: Exception) {
+                        // Check if this is a unique constraint violation (could be wrapped in UnableToExecuteStatementException)
+                        val isUniqueConstraintViolation = e.message?.contains("Unique index or primary key violation") == true ||
+                                e.cause?.message?.contains("Unique index or primary key violation") == true
+                        
+                        if (isUniqueConstraintViolation) {
+                            // Another session already claimed this digest - this is a duplicate upload
+                            // We can safely delete this session's chunks since the content is identical
+                            logger.debug("Blob with digest ${digest.digestString} already exists, removing duplicate chunks from session ${sessionID.id}")
+                            
+                            val deleteStatement = handle.connection.prepareStatement(
+                                "DELETE FROM blobs WHERE sessionID = ? AND digest IS NULL"
+                            )
+                            deleteStatement.setString(1, sessionID.id)
+                            val deletedChunks = deleteStatement.executeUpdate()
+                            
+                            logger.debug("Removed $deletedChunks duplicate chunks from session ${sessionID.id} (digest already exists)")
+                        } else {
+                            // Re-throw other exceptions
+                            throw e
+                        }
                     }
-
-                    // Delete the original chunk blobs
-                    val deleteStatement = handle.connection.prepareStatement(
-                        "DELETE FROM blobs WHERE sessionID = ? AND digest IS NULL"
-                    )
-                    deleteStatement.setString(1, sessionID.id)
-                    val deletedChunks = deleteStatement.executeUpdate()
-
-                    logger.debug("Successfully stitched $deletedChunks chunks into final blob with digest ${digest.digestString}")
                     handle.commit()
 
                 } finally {
