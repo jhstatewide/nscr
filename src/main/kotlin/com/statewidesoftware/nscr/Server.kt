@@ -147,6 +147,7 @@ fun main() {
 class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2BlobStore()) {
     val blobStore = blobstore
     val sessionTracker = SessionTracker()
+    val startTime = System.currentTimeMillis()
     val app: Javalin = Javalin.create { config ->
         config.showJavalinBanner = false
         
@@ -602,6 +603,222 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             )
             ctx.contentType("application/json")
             ctx.json(response)
+        }
+
+        // Comprehensive registry state API for external monitoring and torture testing
+        app.get("/api/registry/state") { ctx ->
+            logger.info("Getting comprehensive registry state...")
+            try {
+                val repositories = blobStore.listRepositories()
+                val gcStats = blobStore.getGarbageCollectionStats()
+                val activeSessions = sessionTracker.getActiveSessions()
+                
+                val repositoryDetails = repositories.map { repoName ->
+                    val tags = blobStore.listTags(repoName)
+                    mapOf(
+                        "name" to repoName,
+                        "tagCount" to tags.size,
+                        "tags" to tags
+                    )
+                }
+                
+                val response = mapOf(
+                    "timestamp" to System.currentTimeMillis(),
+                    "registryVersion" to "2.0",
+                    "summary" to mapOf(
+                        "totalRepositories" to repositories.size,
+                        "totalManifests" to gcStats.totalManifests,
+                        "totalBlobs" to gcStats.totalBlobs,
+                        "unreferencedBlobs" to gcStats.unreferencedBlobs,
+                        "orphanedManifests" to gcStats.orphanedManifests,
+                        "estimatedSpaceToFree" to gcStats.estimatedSpaceToFree
+                    ),
+                    "repositories" to repositoryDetails,
+                    "activeSessions" to mapOf(
+                        "count" to activeSessions.size,
+                        "sessions" to activeSessions.map { session ->
+                            mapOf(
+                                "id" to session.id,
+                                "startTime" to session.startTime,
+                                "lastActivity" to session.lastActivity,
+                                "blobCount" to blobStore.blobCountForSession(session.id)
+                            )
+                        }
+                    ),
+                    "health" to mapOf(
+                        "status" to "healthy",
+                        "uptime" to System.currentTimeMillis() - startTime,
+                        "logStreamClients" to SseLogAppender.getClientCount()
+                    )
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error getting registry state: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to get registry state", "message" to e.message))
+            }
+        }
+
+        // Detailed repository information API
+        app.get("/api/registry/repositories/{name}") { ctx ->
+            val repoName = ctx.pathParam("name")
+            logger.info("Getting detailed information for repository: $repoName")
+            
+            try {
+                val tags = blobStore.listTags(repoName)
+                val tagDetails = tags.map { tag ->
+                    val imageVersion = ImageVersion(repoName, tag)
+                    val hasManifest = blobStore.hasManifest(imageVersion)
+                    val digest = if (hasManifest) blobStore.digestForManifest(imageVersion).digestString else null
+                    
+                    mapOf(
+                        "tag" to tag,
+                        "hasManifest" to hasManifest,
+                        "digest" to digest
+                    )
+                }
+                
+                val response = mapOf(
+                    "name" to repoName,
+                    "tagCount" to tags.size,
+                    "tags" to tagDetails,
+                    "timestamp" to System.currentTimeMillis()
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error getting repository details for $repoName: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to get repository details", "message" to e.message))
+            }
+        }
+
+        // Blob information API
+        app.get("/api/registry/blobs") { ctx ->
+            logger.info("Getting blob information...")
+            
+            try {
+                val blobList = mutableListOf<Map<String, Any>>()
+                blobStore.eachBlob { blobRow ->
+                    blobList.add(mapOf(
+                        "digest" to blobRow.digest,
+                        "size" to blobRow.size,
+                        "created" to blobRow.created
+                    ))
+                }
+                
+                val response = mapOf(
+                    "totalBlobs" to blobList.size,
+                    "blobs" to blobList,
+                    "timestamp" to System.currentTimeMillis()
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error getting blob information: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to get blob information", "message" to e.message))
+            }
+        }
+
+        // Session tracking API
+        app.get("/api/registry/sessions") { ctx ->
+            logger.info("Getting active session information...")
+            
+            try {
+                val activeSessions = sessionTracker.getActiveSessions()
+                val sessionDetails = activeSessions.map { session ->
+                    mapOf(
+                        "id" to session.id,
+                        "startTime" to session.startTime,
+                        "lastActivity" to session.lastActivity,
+                        "blobCount" to blobStore.blobCountForSession(session.id),
+                        "duration" to (System.currentTimeMillis() - session.startTime)
+                    )
+                }
+                
+                val response = mapOf(
+                    "activeSessions" to sessionDetails,
+                    "totalActiveSessions" to activeSessions.size,
+                    "timestamp" to System.currentTimeMillis()
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error getting session information: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to get session information", "message" to e.message))
+            }
+        }
+
+        // Comprehensive health check API
+        app.get("/api/registry/health") { ctx ->
+            logger.info("Performing comprehensive health check...")
+            
+            try {
+                val repositories = blobStore.listRepositories()
+                val gcStats = blobStore.getGarbageCollectionStats()
+                val activeSessions = sessionTracker.getActiveSessions()
+                
+                // Perform basic connectivity tests
+                val canListRepos = try {
+                    blobStore.listRepositories()
+                    true
+                } catch (e: Exception) {
+                    logger.warn("Failed to list repositories during health check: ${e.message}")
+                    false
+                }
+                
+                val canGetStats = try {
+                    blobStore.getGarbageCollectionStats()
+                    true
+                } catch (e: Exception) {
+                    logger.warn("Failed to get GC stats during health check: ${e.message}")
+                    false
+                }
+                
+                val healthStatus = if (canListRepos && canGetStats) "healthy" else "degraded"
+                
+                val response = mapOf(
+                    "status" to healthStatus,
+                    "timestamp" to System.currentTimeMillis(),
+                    "uptime" to (System.currentTimeMillis() - startTime),
+                    "checks" to mapOf(
+                        "repositoryListing" to canListRepos,
+                        "statisticsAccess" to canGetStats,
+                        "databaseConnectivity" to true // H2 is embedded, so always true
+                    ),
+                    "metrics" to mapOf(
+                        "totalRepositories" to repositories.size,
+                        "totalManifests" to gcStats.totalManifests,
+                        "totalBlobs" to gcStats.totalBlobs,
+                        "activeSessions" to activeSessions.size,
+                        "logStreamClients" to SseLogAppender.getClientCount()
+                    ),
+                    "warnings" to if (gcStats.unreferencedBlobs > 0 || gcStats.orphanedManifests > 0) {
+                        listOf("Unreferenced blobs or orphaned manifests detected - consider running garbage collection")
+                    } else {
+                        emptyList<String>()
+                    }
+                )
+                
+                ctx.contentType("application/json")
+                ctx.json(response)
+            } catch (e: Exception) {
+                logger.error("Error during health check: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf(
+                    "status" to "unhealthy",
+                    "error" to "Health check failed",
+                    "message" to e.message,
+                    "timestamp" to System.currentTimeMillis()
+                ))
+            }
         }
 
         // Web interface endpoints

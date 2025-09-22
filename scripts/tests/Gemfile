@@ -1,0 +1,24 @@
+# Gemfile for NSCR External Torture Test
+# This Gemfile provides the minimal dependencies needed for the Ruby torture test client
+
+source 'https://rubygems.org'
+
+# Ruby version requirement
+ruby '>= 2.7.0'
+
+# No external dependencies required - uses only Ruby standard library
+# The script uses:
+# - net/http (HTTP client)
+# - uri (URL parsing)
+# - json (JSON parsing)
+# - time (time handling)
+# - optparse (command line parsing)
+# - logger (logging)
+# - thread (threading primitives)
+
+# Optional: Add development dependencies for testing
+group :development do
+  # Uncomment if you want to add testing frameworks
+  # gem 'rspec', '~> 3.0'
+  # gem 'rubocop', '~> 1.0'
+end
