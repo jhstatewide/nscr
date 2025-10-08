@@ -15,6 +15,9 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
         private val logClients = ConcurrentLinkedQueue<SseClient>()
         private val logger = KotlinLogging.logger { "SseLogAppender" }
         
+        // Minimum log level to broadcast (INFO and above by default)
+        private var minLogLevel = ch.qos.logback.classic.Level.INFO
+        
         fun addClient(client: SseClient) {
             logClients.add(client)
             client.onClose { 
@@ -30,6 +33,11 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
         
         fun getClientCount(): Int = logClients.size
         
+        fun setMinLogLevel(level: ch.qos.logback.classic.Level) {
+            minLogLevel = level
+            logger.info { "SSE log level set to: $level" }
+        }
+        
         fun broadcastLog(timestamp: Long, level: String, message: String, logger: String, thread: String) {
             val logEntry = mapOf(
                 "timestamp" to timestamp,
@@ -39,15 +47,16 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
                 "thread" to thread
             )
             
-            // Broadcast to all connected clients
+            // Broadcast to all connected clients with improved cleanup
             val iterator = logClients.iterator()
             while (iterator.hasNext()) {
                 val client = iterator.next()
                 try {
                     client.sendEvent("log", logEntry)
                 } catch (e: Exception) {
-                    // Remove disconnected clients
+                    // Remove disconnected clients and log the cleanup
                     iterator.remove()
+                    SseLogAppender.logger.info { "Removed disconnected SSE client during broadcast. Remaining clients: ${logClients.size}" }
                 }
             }
         }
@@ -56,23 +65,27 @@ class SseLogAppender : AppenderBase<ILoggingEvent>() {
     override fun append(event: ILoggingEvent) {
         if (!isStarted()) return
         
-        val logEntry = mapOf(
-            "timestamp" to event.timeStamp,
-            "level" to event.level.toString(),
-            "message" to event.formattedMessage,
-            "logger" to event.loggerName,
-            "thread" to event.threadName
-        )
-        
-        // Broadcast to all connected clients
-        val iterator = logClients.iterator()
-        while (iterator.hasNext()) {
-            val client = iterator.next()
-            try {
-                client.sendEvent("log", logEntry)
-            } catch (e: Exception) {
-                // Remove disconnected clients
-                iterator.remove()
+        // Filter out low-level logs to reduce spam during stress testing
+        if (event.level.isGreaterOrEqual(minLogLevel)) {
+            val logEntry = mapOf(
+                "timestamp" to event.timeStamp,
+                "level" to event.level.toString(),
+                "message" to event.formattedMessage,
+                "logger" to event.loggerName,
+                "thread" to event.threadName
+            )
+            
+            // Broadcast to all connected clients with improved cleanup
+            val iterator = logClients.iterator()
+            while (iterator.hasNext()) {
+                val client = iterator.next()
+                try {
+                    client.sendEvent("log", logEntry)
+                } catch (e: Exception) {
+                    // Remove disconnected clients and log the cleanup
+                    iterator.remove()
+                    SseLogAppender.logger.info { "Removed disconnected SSE client during log append. Remaining clients: ${logClients.size}" }
+                }
             }
         }
     }

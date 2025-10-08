@@ -42,7 +42,8 @@ class RegistryWebInterface {
   private isAuthenticated = false;
   private eventSource: EventSource | null = null;
   private logs: LogEntry[] = [];
-  private maxLogs = 1000;
+  private maxLogs = 500; // Reduced from 1000 to prevent memory issues
+  private logDisplayUpdateThrottle: number | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
   private reconnectTimeout: number | null = null;
@@ -56,6 +57,9 @@ class RegistryWebInterface {
   // Auto-refresh state
   private dashboardRefreshInterval: number | null = null;
   private dashboardRefreshIntervalMs = 3000; // Refresh every 3 seconds
+  
+  // Log level control
+  private currentLogLevel = 'INFO';
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -72,6 +76,10 @@ class RegistryWebInterface {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+    if (this.logDisplayUpdateThrottle) {
+      clearTimeout(this.logDisplayUpdateThrottle);
+      this.logDisplayUpdateThrottle = null;
     }
     if (this.eventSource) {
       this.eventSource.close();
@@ -435,6 +443,16 @@ class RegistryWebInterface {
             </div>
           </div>
           <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-1">
+              <label for="log-level-select" class="form-label mb-0 small">Level:</label>
+              <select id="log-level-select" class="form-select form-select-sm" style="width: auto;">
+                <option value="ERROR">ERROR</option>
+                <option value="WARN">WARN</option>
+                <option value="INFO" selected>INFO</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="TRACE">TRACE</option>
+              </select>
+            </div>
             <span id="log-stream-status" class="badge bg-danger">
               <i class="bi bi-wifi-off"></i> Disconnected
             </span>
@@ -473,6 +491,11 @@ class RegistryWebInterface {
     document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
       this.logs = [];
       this.updateLogDisplay();
+    });
+
+    document.getElementById('log-level-select')?.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement;
+      this.setLogLevel(target.value);
     });
 
     // Auto-start log streaming when the page loads
@@ -824,7 +847,15 @@ class RegistryWebInterface {
       this.logs = this.logs.slice(0, this.maxLogs);
     }
     
-    this.updateLogDisplay();
+    // Throttle log display updates to prevent excessive DOM manipulation
+    if (this.logDisplayUpdateThrottle) {
+      clearTimeout(this.logDisplayUpdateThrottle);
+    }
+    
+    this.logDisplayUpdateThrottle = window.setTimeout(() => {
+      this.updateLogDisplay();
+      this.logDisplayUpdateThrottle = null;
+    }, 100); // Update display every 100ms max
   }
 
   private updateLogDisplay() {
@@ -973,6 +1004,34 @@ class RegistryWebInterface {
       const now = new Date();
       refreshElement.textContent = now.toLocaleTimeString();
     }
+  }
+
+  private async setLogLevel(level: string) {
+    try {
+      const response = await fetch('/api/web/log-level', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer web-token-${this.getAuthToken()}`
+        },
+        body: JSON.stringify({ level })
+      });
+
+      if (response.ok) {
+        this.currentLogLevel = level;
+        this.showAlert(`Log level set to ${level}`, 'success');
+      } else {
+        const error = await response.json();
+        this.showAlert(`Failed to set log level: ${error.error}`, 'danger');
+      }
+    } catch (error) {
+      this.showAlert(`Failed to set log level: ${error}`, 'danger');
+    }
+  }
+
+  private getAuthToken(): string {
+    // Simple token retrieval - in production, use proper session management
+    return 'admin'; // Default token
   }
 }
 

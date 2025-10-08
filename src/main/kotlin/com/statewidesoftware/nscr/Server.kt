@@ -123,6 +123,24 @@ fun configureLogging() {
     javalinLogger.level = Level.WARN
 }
 
+/**
+ * Extract the media type from a manifest JSON string
+ * Returns the appropriate content type for the manifest
+ */
+fun extractManifestMediaType(manifestJson: String): String {
+    return try {
+        // Parse the JSON to extract the mediaType field
+        val jsonObject = com.google.gson.JsonParser.parseString(manifestJson).asJsonObject
+        val mediaType = jsonObject.get("mediaType")?.asString
+        
+        // Return the media type if found, otherwise default to Docker v2
+        mediaType ?: "application/vnd.docker.distribution.manifest.v2+json"
+    } catch (e: Exception) {
+        // If parsing fails, default to Docker v2 manifest type
+        "application/vnd.docker.distribution.manifest.v2+json"
+    }
+}
+
 fun main() {
     // Configure logging level from environment
     configureLogging()
@@ -363,7 +381,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
-            val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
             
             if (!blobStore.hasManifest(imageVersion)) {
                 ctx.status(404)
@@ -371,20 +388,23 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 return@get
             }
             
+            val manifestJson = blobStore.getManifest(imageVersion)
+            val manifestType = extractManifestMediaType(manifestJson)
+            
             if (imageVersion.tag.startsWith("sha256:")) {
                 // by digest
                 logger.debug("Want to look up digest for {}!", imageVersion)
                 ctx.status(200)
                 ctx.header("Docker-Content-Digest", imageVersion.tag)
                 ctx.contentType(manifestType)
-                ctx.result(blobStore.getManifest(imageVersion))
+                ctx.result(manifestJson)
             } else {
                 val digest = blobStore.digestForManifest(imageVersion)
                 logger.debug("Digest for manifest {} is {}", imageVersion, digest)
                 ctx.status(200)
                 ctx.header("Docker-Content-Digest", digest.digestString)
                 ctx.contentType(manifestType)
-                ctx.result(blobStore.getManifest(imageVersion))
+                ctx.result(manifestJson)
             }
         }
 
@@ -451,9 +471,12 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             logger.info("PUSH DEBUG: Processing manifest upload for $name:$reference")
 
             val contentType = ctx.header("Content-Type")
-            val manifestType = "application/vnd.docker.distribution.manifest.v2+json"
-            if (contentType != manifestType) {
-                error("Mime type blooper! You must upload manifest of type: $manifestType instead of $contentType!")
+            val supportedManifestTypes = listOf(
+                "application/vnd.docker.distribution.manifest.v2+json",
+                "application/vnd.oci.image.manifest.v1+json"
+            )
+            if (contentType !in supportedManifestTypes) {
+                error("Mime type blooper! You must upload manifest of type: ${supportedManifestTypes.joinToString(" or ")} instead of $contentType!")
             }
             val body = ctx.body()
             logger.debug("Uploaded manifest is: $body")
@@ -1008,6 +1031,35 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     
                     ctx.status(500)
                     ctx.json(mapOf("error" to "Internal Server Error: ${e.message}"))
+                }
+            }
+            
+            // Log level control endpoint for stress testing
+            app.post("/api/web/log-level") { ctx ->
+                ctx.requireWebAuth()
+                
+                try {
+                    val requestBody = ctx.bodyAsClass<Map<String, String>>(Map::class.java)
+                    val level = requestBody["level"]?.toUpperCase()
+                    
+                    when (level) {
+                        "TRACE" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.TRACE)
+                        "DEBUG" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.DEBUG)
+                        "INFO" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.INFO)
+                        "WARN" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.WARN)
+                        "ERROR" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.ERROR)
+                        else -> {
+                            ctx.status(400)
+                            ctx.json(mapOf("error" to "Invalid log level. Must be one of: TRACE, DEBUG, INFO, WARN, ERROR"))
+                            return@post
+                        }
+                    }
+                    
+                    ctx.json(mapOf("message" to "Log level set to $level", "level" to level))
+                } catch (e: Exception) {
+                    logger.error("Error setting log level: ${e.message}", e)
+                    ctx.status(500)
+                    ctx.json(mapOf("error" to "Failed to set log level: ${e.message}"))
                 }
             }
             
