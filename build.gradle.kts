@@ -48,7 +48,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    
+
     // Automatically clean up test data after tests complete
     finalizedBy("cleanupTestData")
 }
@@ -151,21 +151,21 @@ tasks.register<Exec>("devFrontend") {
 tasks.register<JavaExec>("tortureTest") {
     group = "testing"
     description = "Run registry torture test - randomly performs operations and validates correctness"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
-    
+
     // Default arguments - can be overridden with -Pargs
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "50"
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "2000"
     val outputFile = project.findProperty("torture.outputFile") as String?
-    
+
     args = listOfNotNull(registryUrl, maxOperations, operationDelayMs, outputFile)
-    
+
     // Ensure the registry is built
     dependsOn("build")
-    
+
     // Set up logging
     standardOutput = System.out
     errorOutput = System.err
@@ -175,20 +175,20 @@ tasks.register<JavaExec>("tortureTest") {
 tasks.register<JavaExec>("tortureTestExtended") {
     group = "testing"
     description = "Run extended registry torture test with more operations and longer duration"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
-    
+
     // Extended test parameters
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "200"
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "1000"
     val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-extended-report.txt"
-    
+
     args = listOf(registryUrl, maxOperations, operationDelayMs, outputFile)
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -197,20 +197,20 @@ tasks.register<JavaExec>("tortureTestExtended") {
 tasks.register<JavaExec>("tortureTestQuick") {
     group = "testing"
     description = "Run quick registry torture test for CI/CD pipelines"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.TortureTestMainKt")
-    
+
     // Quick test parameters
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val maxOperations = project.findProperty("torture.maxOperations") as String? ?: "20"
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "500"
     val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-quick-report.txt"
-    
+
     args = listOf(registryUrl, maxOperations, operationDelayMs, outputFile)
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -219,10 +219,10 @@ tasks.register<JavaExec>("tortureTestQuick") {
 tasks.register<JavaExec>("tortureTestConcurrent") {
     group = "testing"
     description = "Run concurrent registry torture test with N workers hitting the registry simultaneously"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
-    
+
     // Concurrent test parameters
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "4"
@@ -230,11 +230,11 @@ tasks.register<JavaExec>("tortureTestConcurrent") {
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "500"
     val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "8"
     val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-report.txt"
-    
+
     args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -243,10 +243,10 @@ tasks.register<JavaExec>("tortureTestConcurrent") {
 tasks.register<JavaExec>("tortureTestConcurrentIntense") {
     group = "testing"
     description = "Run high-intensity concurrent registry torture test with many workers and operations"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
-    
+
     // High-intensity test parameters
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "8"
@@ -254,11 +254,11 @@ tasks.register<JavaExec>("tortureTestConcurrentIntense") {
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "200"
     val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "16"
     val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-intense-report.txt"
-    
+
     args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -267,10 +267,10 @@ tasks.register<JavaExec>("tortureTestConcurrentIntense") {
 tasks.register<JavaExec>("tortureTestConcurrentStress") {
     group = "testing"
     description = "Run maximum stress concurrent registry torture test - use with caution"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ConcurrentTortureTestMainKt")
-    
+
     // Maximum stress test parameters
     val registryUrl = project.findProperty("torture.registryUrl") as String? ?: "localhost:7000"
     val numWorkers = project.findProperty("torture.numWorkers") as String? ?: "16"
@@ -278,11 +278,11 @@ tasks.register<JavaExec>("tortureTestConcurrentStress") {
     val operationDelayMs = project.findProperty("torture.operationDelayMs") as String? ?: "100"
     val maxConcurrentOperations = project.findProperty("torture.maxConcurrentOperations") as String? ?: "32"
     val outputFile = project.findProperty("torture.outputFile") as String? ?: "torture-test-concurrent-stress-report.txt"
-    
+
     args = listOf(registryUrl, numWorkers, operationsPerWorker, operationDelayMs, maxConcurrentOperations, outputFile)
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -291,10 +291,10 @@ tasks.register<JavaExec>("tortureTestConcurrentStress") {
 tasks.register<JavaExec>("runProfile") {
     group = "application"
     description = "Run the server with profiling enabled for JVisualVM and Java Mission Control"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ServerKt")
-    
+
     // JVM arguments for profiling
     jvmArgs = listOf(
         // Enable JMX for JVisualVM and Java Mission Control
@@ -303,25 +303,25 @@ tasks.register<JavaExec>("runProfile") {
         "-Dcom.sun.management.jmxremote.authenticate=false",
         "-Dcom.sun.management.jmxremote.ssl=false",
         "-Dcom.sun.management.jmxremote.local.only=false",
-        
+
         // Enable JFR (Java Flight Recorder) for detailed profiling
         "-XX:+FlightRecorder",
-        
+
         // Additional profiling-friendly JVM settings
         "-XX:+UnlockDiagnosticVMOptions",
         "-XX:+DebugNonSafepoints",
-        
+
         // Memory settings for better profiling visibility
         "-Xmx2g",
         "-Xms1g",
-        
+
         // GC logging for analysis (Java 17 compatible)
         "-XX:+UseG1GC",
         // "-Xlog:gc*:gc-profile.log:time"
     )
-    
+
     dependsOn("build")
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -330,15 +330,15 @@ tasks.register<JavaExec>("runProfile") {
 tasks.register<Delete>("cleanupTestData") {
     group = "verification"
     description = "Clean up test data directories while preserving .keep file"
-    
+
     val testDataDir = file("tmp/test-data")
-    
+
     doFirst {
         if (!testDataDir.exists()) {
             println("📁 Test data directory does not exist: $testDataDir")
             return@doFirst
         }
-        
+
         val keepFile = file("$testDataDir/.keep")
         if (!keepFile.exists()) {
             println("⚠️  Warning: .keep file not found, creating it...")
@@ -346,15 +346,15 @@ tasks.register<Delete>("cleanupTestData") {
 # Test artifacts are automatically cleaned up but this file remains
 """)
         }
-        
+
         val dirsToDelete = testDataDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
         println("🧹 Found ${dirsToDelete.size} test directories to clean up")
-        
+
         dirsToDelete.forEach { dir ->
             println("🗑️  Removing: ${dir.name}")
         }
     }
-    
+
     // Remove all directories and files except .keep
     doLast {
         val cleanupDir = file("tmp/test-data")
@@ -367,7 +367,7 @@ tasks.register<Delete>("cleanupTestData") {
                 }
             }
         }
-        
+
         val keepFile = file("tmp/test-data/.keep")
         if (keepFile.exists()) {
             println("✅ Cleanup complete! .keep file preserved")
@@ -379,19 +379,22 @@ tasks.register<Delete>("cleanupTestData") {
 }
 
 // Make cleanupTestData run as part of the clean task
-tasks.named("clean") { dependsOn("cleanupTestData", "cleanupAllTestDockerImages") }
+tasks.named("clean") {
+    dependsOn("cleanupTestData")
+    dependsOn("cleanupAllTestDockerImages")
+}
 
 // Task to run the cleanup script (convenience wrapper)
 tasks.register<Exec>("cleanup") {
     group = "verification"
     description = "Run the comprehensive cleanup script (test data + Docker images)"
-    
+
     commandLine("./cleanup-tests.sh")
-    
+
     doFirst {
         println("🧹 Running comprehensive cleanup...")
     }
-    
+
     doLast {
         println("✅ Comprehensive cleanup completed!")
     }
@@ -401,13 +404,13 @@ tasks.register<Exec>("cleanup") {
 tasks.register<Exec>("cleanupDockerImages") {
     group = "verification"
     description = "Clean up Docker images created by test runs"
-    
+
     commandLine("docker", "image", "prune", "-f")
-    
+
     doFirst {
         println("🐳 Cleaning up Docker images created by tests...")
     }
-    
+
     doLast {
         println("✅ Docker image cleanup completed")
     }
@@ -417,7 +420,7 @@ tasks.register<Exec>("cleanupDockerImages") {
 tasks.register<Exec>("cleanupTestDockerImages") {
     group = "verification"
     description = "Clean up Docker images with nscr-test-registry-* prefix (created by tests)"
-    
+
     commandLine("./scripts/cleanup-docker-images.sh")
 }
 
@@ -425,7 +428,7 @@ tasks.register<Exec>("cleanupTestDockerImages") {
 tasks.register<Exec>("cleanupAllTestDockerImages") {
     group = "verification"
     description = "Clean up all test-related Docker images (nscr-test-registry-* and localhost:*nscr-test-* from old runs)"
-    
+
     commandLine("./scripts/cleanup-docker-images.sh")
 }
 
@@ -433,17 +436,17 @@ tasks.register<Exec>("cleanupAllTestDockerImages") {
 tasks.register<Exec>("dockerBuild") {
     group = "docker"
     description = "Build Docker image of the NSCR project with BuildKit cache mounts"
-    
+
     doFirst {
         println("🐳 Building Docker image for NSCR project...")
         println("📦 This will create a containerized version of the registry")
         println("⚡ Using BuildKit with cache mounts for faster builds")
     }
-    
+
     // Enable BuildKit and use cache mounts
     environment("DOCKER_BUILDKIT", "1")
     commandLine("docker", "build", "-t", "nscr:latest", ".")
-    
+
     doLast {
         println("✅ Docker image built successfully!")
         println("🚀 You can now run: docker run -p 7000:7000 nscr:latest")
@@ -455,14 +458,14 @@ tasks.register<Exec>("dockerBuild") {
 tasks.register<Exec>("dockerRun") {
     group = "docker"
     description = "Run the NSCR Docker container"
-    
+
     doFirst {
         println("🚀 Starting NSCR Docker container...")
         println("🌐 Registry will be available at http://localhost:7000")
     }
-    
+
     commandLine("docker", "run", "-p", "7000:7000", "--name", "nscr-container", "nscr:latest")
-    
+
     doLast {
         println("✅ NSCR container started!")
         println("🛑 To stop: docker stop nscr-container")
@@ -474,16 +477,16 @@ tasks.register<Exec>("dockerRun") {
 tasks.register<Exec>("dockerStop") {
     group = "docker"
     description = "Stop and remove the NSCR Docker container"
-    
+
     doFirst {
         println("🛑 Stopping NSCR Docker container...")
     }
-    
+
     commandLine("bash", "-c", """
         docker stop nscr-container 2>/dev/null || echo "Container not running"
         docker rm nscr-container 2>/dev/null || echo "Container not found"
     """.trimIndent())
-    
+
     doLast {
         println("✅ NSCR container stopped and removed!")
     }
@@ -493,16 +496,16 @@ tasks.register<Exec>("dockerStop") {
 tasks.register<Exec>("dockerBuildSemeru") {
     group = "docker"
     description = "Build Docker image with IBM Semeru OpenJ9 for minimal memory usage"
-    
+
     doFirst {
         println("🐳 Building NSCR Docker image with IBM Semeru OpenJ9...")
         println("📦 This will create a containerized version optimized for minimal memory usage")
         println("⚡ Using BuildKit with cache mounts for faster builds")
     }
-    
+
     environment("DOCKER_BUILDKIT", "1")
     commandLine("docker", "build", "--target", "semeru", "-t", "nscr:semeru", ".")
-    
+
     doLast {
         println("✅ Semeru OpenJ9 Docker image built successfully!")
         println("🚀 You can now run: docker run -p 7000:7000 nscr:semeru")
@@ -514,15 +517,15 @@ tasks.register<Exec>("dockerBuildSemeru") {
 tasks.register<Exec>("dockerRunSemeru") {
     group = "docker"
     description = "Run the NSCR Docker container with IBM Semeru OpenJ9"
-    
+
     doFirst {
         println("🚀 Starting NSCR Docker container with IBM Semeru OpenJ9...")
         println("🌐 Registry will be available at http://localhost:7000")
         println("💾 Optimized for minimal memory usage and container-friendly behavior")
     }
-    
+
     commandLine("docker", "run", "--rm", "-p", "7000:7000", "--name", "nscr-semeru-container", "nscr:semeru")
-    
+
     doLast {
         println("✅ NSCR Semeru Docker container started successfully!")
         println("🛑 To stop: docker stop nscr-semeru-container")
@@ -533,14 +536,14 @@ tasks.register<Exec>("dockerRunSemeru") {
 tasks.register<Exec>("dockerInfo") {
     group = "docker"
     description = "Show information about the NSCR Docker image"
-    
+
     doFirst {
         println("📊 NSCR Docker Image Information")
         println("================================")
     }
-    
+
     commandLine("docker", "images", "nscr")
-    
+
     doLast {
         println("")
         println("💡 Usage:")
@@ -554,31 +557,31 @@ tasks.register<Exec>("dockerInfo") {
 tasks.register<JavaExec>("runWithPortCheck") {
     group = "application"
     description = "Run the server with port availability check"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ServerKt")
-    
+
     dependsOn("build")
-    
+
     doFirst {
         // Check if port is available before starting
         val port = System.getenv("NSCR_PORT")?.toIntOrNull() ?: 7000
-        
+
         // Use lsof to check if port is in use
         val process = ProcessBuilder("lsof", "-i", ":$port").start()
         val exitCode = process.waitFor()
-        
+
         if (exitCode == 0) {
             // Port is in use
             throw GradleException("""
                 ❌ FATAL ERROR: Port $port is already in use!
-                
+
                 🔍 To find what's using the port, run:
                    lsof -i :$port
-                   
+
                 🛑 To kill processes using the port, run:
                    pkill -f "gradlew run"
-                   
+
                 💡 Or use a different port:
                    NSCR_PORT=7001 ./gradlew runWithPortCheck
             """.trimIndent())
@@ -586,10 +589,10 @@ tasks.register<JavaExec>("runWithPortCheck") {
             // Port is available
             println("✅ Port $port is available")
         }
-        
+
         println("🚀 Starting NSCR server...")
     }
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -598,34 +601,34 @@ tasks.register<JavaExec>("runWithPortCheck") {
 tasks.register<JavaExec>("runWithShutdown") {
     group = "application"
     description = "Run the server with shutdown endpoint enabled for external torture testing"
-    
+
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.statewidesoftware.nscr.ServerKt")
-    
+
     // Ensure shutdown endpoint is enabled (it's enabled by default, but being explicit)
     environment("NSCR_SHUTDOWN_ENDPOINT_ENABLED", "true")
-    
+
     dependsOn("build")
-    
+
     doFirst {
         // Check if port is available before starting
         val port = System.getenv("NSCR_PORT")?.toIntOrNull() ?: 7000
-        
+
         // Use lsof to check if port is in use
         val process = ProcessBuilder("lsof", "-i", ":$port").start()
         val exitCode = process.waitFor()
-        
+
         if (exitCode == 0) {
             // Port is in use
             throw GradleException("""
                 ❌ FATAL ERROR: Port $port is already in use!
-                
+
                 🔍 To find what's using the port, run:
                    lsof -i :$port
-                   
+
                 🛑 To kill processes using the port, run:
                    pkill -f "gradlew run"
-                   
+
                 💡 Or use a different port:
                    NSCR_PORT=7001 ./gradlew runWithShutdown
             """.trimIndent())
@@ -633,12 +636,12 @@ tasks.register<JavaExec>("runWithShutdown") {
             // Port is available
             println("✅ Port $port is available")
         }
-        
+
         println("🚀 Starting NSCR server with shutdown endpoint enabled...")
         println("🛑 Shutdown endpoint available at: POST /api/shutdown")
         println("🧪 Perfect for external torture testing!")
     }
-    
+
     standardOutput = System.out
     errorOutput = System.err
 }
