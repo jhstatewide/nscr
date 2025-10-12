@@ -6,19 +6,19 @@
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    
+
     <!-- SSE appender for web interface log streaming -->
     <appender name="SSE" class="com.statewidesoftware.nscr.SseLogAppender">
     </appender>
-    
+
     <!-- Root logger configuration -->
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="SSE" />
     </root>
-    
+
     <!-- Specific logger configurations -->
-    <logger name="com.statewidesoftware.nscr" level="DEBUG" />
+    <logger name="com.statewidesoftware.nscr" level="INFO" />
     <logger name="io.javalin" level="WARN" />
     <logger name="org.eclipse.jetty" level="WARN" />
     <logger name="blobstore.H2BlobStore" level="WARN" />

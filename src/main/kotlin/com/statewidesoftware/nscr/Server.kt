@@ -25,14 +25,14 @@ fun Context.requireWebAuth() {
     if (!Config.WEB_INTERFACE_ENABLED || !Config.WEB_AUTH_ENABLED) {
         return // No web auth required
     }
-    
+
     val authHeader = this.header("Authorization")
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
         this.status(401)
         this.json(mapOf("error" to "Web interface authentication required"))
         return
     }
-    
+
     // For now, we'll use a simple token validation
     // In production, you might want to use JWT or session management
     val token = authHeader.substring(7)
@@ -52,7 +52,7 @@ fun Context.requireAuth() {
     if (!Config.AUTH_ENABLED) {
         return // No auth required
     }
-    
+
     val authHeader = this.header("Authorization")
     if (authHeader == null || !authHeader.startsWith("Basic ")) {
         this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
@@ -60,29 +60,29 @@ fun Context.requireAuth() {
         this.result("Authentication required")
         return
     }
-    
+
     try {
         val encoded = authHeader.substring(6) // Remove "Basic " prefix
         val decoded = String(java.util.Base64.getDecoder().decode(encoded))
         val parts = decoded.split(":", limit = 2)
-        
+
         if (parts.size != 2) {
             this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
             this.status(401)
             this.result("Invalid authentication format")
             return
         }
-        
+
         val username = parts[0]
         val password = parts[1]
-        
+
         if (username != Config.AUTH_USERNAME || password != Config.AUTH_PASSWORD) {
             this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
             this.status(401)
             this.result("Invalid credentials")
             return
         }
-        
+
         // Authentication successful, continue
     } catch (e: Exception) {
         this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
@@ -105,11 +105,11 @@ fun configureLogging() {
         "ERROR" -> Level.ERROR
         else -> Level.INFO
     }
-    
+
     // Set root logger level
     val rootLogger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
     rootLogger.level = level
-    
+
     // Set specific logger levels for noisy components
     val blobStoreLogger = LoggerFactory.getLogger("blobstore.H2BlobStore") as Logger
     when (logLevel) {
@@ -117,7 +117,7 @@ fun configureLogging() {
         "INFO" -> blobStoreLogger.level = Level.WARN  // Reduce blob store noise at INFO level
         "WARN", "ERROR" -> blobStoreLogger.level = level
     }
-    
+
     // Set Javalin to be less verbose
     val javalinLogger = LoggerFactory.getLogger("io.javalin") as Logger
     javalinLogger.level = Level.WARN
@@ -132,7 +132,7 @@ fun extractManifestMediaType(manifestJson: String): String {
         // Parse the JSON to extract the mediaType field
         val jsonObject = com.google.gson.JsonParser.parseString(manifestJson).asJsonObject
         val mediaType = jsonObject.get("mediaType")?.asString
-        
+
         // Return the media type if found, otherwise default to Docker v2
         mediaType ?: "application/vnd.docker.distribution.manifest.v2+json"
     } catch (e: Exception) {
@@ -144,9 +144,9 @@ fun extractManifestMediaType(manifestJson: String): String {
 fun main() {
     // Configure logging level from environment
     configureLogging()
-    
+
     val logger = KotlinLogging.logger {  }
-    
+
     // Validate configuration before starting
     val configErrors = Config.validate()
     if (configErrors.isNotEmpty()) {
@@ -154,10 +154,10 @@ fun main() {
         configErrors.forEach { error -> logger.error("  - $error") }
         System.exit(1)
     }
-    
+
     // Print configuration on startup
     Config.printConfig()
-    
+
     val app = RegistryServerApp(logger)
     app.start(Config.SERVER_PORT)
 }
@@ -168,7 +168,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     val startTime = System.currentTimeMillis()
     val app: Javalin = Javalin.create { config ->
         config.showJavalinBanner = false
-        
+
         // Configure static file serving for web interface
         if (Config.WEB_INTERFACE_ENABLED) {
             config.staticFiles.add { staticFiles ->
@@ -176,20 +176,20 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 staticFiles.directory = "/static"
                 staticFiles.location = Location.CLASSPATH
             }
-            
+
         }
-        
+
     } ?: throw Error("Could not create Javalin app!")
 
     init {
         bindApp(app, logger)
-        
+
         // SSE endpoints
         app.sse("/api/logs/stream") { client ->
             try {
                 SseLogAppender.addClient(client)
                 client.sendEvent("connected", "Log stream started")
-                
+
                 // Send a welcome message after 3 seconds to show the user the connection is working
                 Thread {
                     try {
@@ -205,7 +205,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         // Thread interrupted, connection likely closed
                     }
                 }.start()
-                
+
                 // Keep the connection alive by not returning from this block
                 // The connection will stay open until the client disconnects
                 try {
@@ -217,7 +217,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 logger.error { "Error in SSE connection: ${e.message}" }
             }
         }
-        
+
         // Shutdown endpoint (only enabled if configured)
         if (Config.SHUTDOWN_ENDPOINT_ENABLED) {
             app.post("/api/shutdown") { ctx ->
@@ -226,7 +226,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "message" to "Server shutdown initiated",
                     "timestamp" to System.currentTimeMillis()
                 ))
-                
+
                 // Shutdown in a separate thread to allow response to be sent
                 Thread {
                     Thread.sleep(1000) // Give time for response to be sent
@@ -236,13 +236,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 }.start()
             }
         }
-        
-        
+
+
         // Start cleanup task if blobstore supports it
         if (blobStore is H2BlobStore) {
             blobStore.startCleanupTask()
         }
-        
+
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
             logger.info("Shutting down RegistryServerApp...")
@@ -258,12 +258,12 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         try {
             logger.info("Stopping Javalin application...")
             app.stop()
-            
+
             // Clean up blobstore resources
             if (blobStore is H2BlobStore) {
                 blobStore.cleanup()
             }
-            
+
             logger.info("RegistryServerApp stopped successfully")
         } catch (e: Exception) {
             logger.error("Error stopping RegistryServerApp: ${e.message}")
@@ -277,24 +277,24 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     private fun bindApp(app: Javalin, logger: KLogger) {
         // Central authentication for Docker Registry API endpoints
         app.before("/v2") { ctx ->
-            logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            logger.trace("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             ctx.requireAuth()
         }
         app.before("/v2/*") { ctx ->
-            logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+            logger.trace("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             ctx.requireAuth()
         }
-        
+
         // Central authentication for administrative API endpoints (exclude status endpoint)
         app.before("/api") { ctx ->
             if (!ctx.url().contains("/status")) {
-                logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+                logger.trace("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             }
             ctx.requireAuth()
         }
         app.before("/api/*") { ctx ->
             if (!ctx.url().contains("/status")) {
-                logger.debug("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
+                logger.trace("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             }
             ctx.requireAuth()
         }
@@ -324,7 +324,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val fullPath = ctx.path()
             val image = fullPath.substringAfter("/v2/").substringBefore("/blobs")
             val digest = Digest(ctx.pathParam("digest"))
-            logger.debug("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
+            logger.trace("Checking on /v2/$image/blobs/${digest.digestString} ($image ${digest.digestString})")
             handleBlobExistenceCheck(ctx, digest, logger)
         }
 
@@ -333,7 +333,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val tag = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tag)
-            logger.debug { "Checking on manifest for $imageVersion" }
+            logger.trace { "Checking on manifest for $imageVersion" }
             handleManifestExistenceCheck(ctx, imageVersion, logger)
         }
 
@@ -376,21 +376,34 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.result("OK")
         }
 
+        // List tags for a repository (supports slashes in name using <> syntax)
+        app.get("/v2/<name>/tags/list") { ctx ->
+            val name = ctx.pathParam("name")
+            logger.info("Tags list request - name: $name")
+            val tags = blobStore.listTags(name)
+            logger.info("Found tags for $name: $tags")
+            val response = mapOf(
+                "name" to name,
+                "tags" to tags
+            )
+            ctx.json(response)
+        }
+
         app.get("/v2/*/manifests/{tag}") { ctx ->
             val fullPath = ctx.path()
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val tagOrDigest = ctx.pathParam("tag")
             val imageVersion = ImageVersion(name, tagOrDigest)
-            
+
             if (!blobStore.hasManifest(imageVersion)) {
                 ctx.status(404)
                 ctx.result("Manifest not found")
                 return@get
             }
-            
+
             val manifestJson = blobStore.getManifest(imageVersion)
             val manifestType = extractManifestMediaType(manifestJson)
-            
+
             if (imageVersion.tag.startsWith("sha256:")) {
                 // by digest
                 logger.debug("Want to look up digest for {}!", imageVersion)
@@ -413,7 +426,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         app.post("/v2/*/blobs/uploads") { ctx ->
             handleBlobUploadPost(ctx)
         }
-        
+
         // Handler for POST /v2/*/blobs/uploads/ (with trailing slash)
         app.post("/v2/*/blobs/uploads/") { ctx ->
             handleBlobUploadPost(ctx)
@@ -449,7 +462,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
             logger.debug("PUT /v2/uploads/$sessionID/$blobNumber - Finalizing blob upload for digest: $digest")
-            
+
             try {
                 // 201 Created
                 blobStore.associateBlobWithSession(sessionID, digest)
@@ -480,12 +493,12 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
             val body = ctx.body()
             logger.debug("Uploaded manifest is: $body")
-            
+
             // Extract and log blob digests referenced by this manifest
             try {
                 val blobDigests = extractBlobDigestsFromManifest(body)
                 logger.info("PUSH DEBUG: Manifest $name:$reference references ${blobDigests.size} blobs: ${blobDigests.joinToString(", ")}")
-                
+
                 // Verify that all referenced blobs exist
                 val missingBlobs = blobDigests.filter { !blobStore.hasBlob(Digest(it)) }
                 if (missingBlobs.isNotEmpty()) {
@@ -496,7 +509,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             } catch (e: Exception) {
                 logger.warn("PUSH DEBUG: Failed to extract blob digests from manifest $name:$reference: ${e.message}")
             }
-            
+
             // get digest for this manifest...
             val sha = generateSHA256(body)
             val digestString = "sha256:$sha"
@@ -538,11 +551,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val reference = ctx.pathParam("reference")
             val imageVersion = ImageVersion(name, reference)
             logger.info("Deleting manifest for $imageVersion")
-            
+
             try {
                 // Atomic delete operation - check and delete in one transaction
                 val wasDeleted = blobStore.removeManifestIfExists(imageVersion)
-                
+
                 if (wasDeleted) {
                     ctx.status(202)
                     ctx.result("Manifest deleted")
@@ -564,25 +577,15 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.json(response)
         }
 
-        // List tags for a repository
-        app.get("/v2/{name}/tags/list") { ctx ->
-            val name = ctx.pathParam("name")
-            val tags = blobStore.listTags(name)
-            val response = mapOf(
-                "name" to name,
-                "tags" to tags
-            )
-            ctx.json(response)
-        }
 
         // Delete entire repository (all manifests/tags)
-        app.delete("/v2/{name}") { ctx ->
+        app.delete("/v2/<name>") { ctx ->
             val name = ctx.pathParam("name")
             logger.info("Deleting repository: $name")
-            
+
             try {
                 val deletedCount = blobStore.deleteRepository(name)
-                
+
                 if (deletedCount > 0) {
                     ctx.status(202)
                     val response = mapOf(
@@ -635,25 +638,25 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             try {
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
-                
+
                 // Calculate storage metrics
                 var totalBytes = 0L
                 val uniqueBlobs = mutableSetOf<String>()
                 var uniqueBytes = 0L
-                
+
                 blobStore.eachBlob { blobRow ->
                     val blobSize = blobRow.content.size.toLong()
                     totalBytes += blobSize
-                    
+
                     val digest = blobRow.digest
                     if (digest != null && uniqueBlobs.add(digest)) {
                         uniqueBytes += blobSize
                     }
                 }
-                
+
                 val deduplicationRatio = if (totalBytes > 0) (uniqueBytes.toDouble() / totalBytes.toDouble()) else 0.0
                 val spaceSavings = totalBytes - uniqueBytes
-                
+
                 val repositoryDetails = repositories.map { repoName ->
                     val tags = blobStore.listTags(repoName)
                     mapOf(
@@ -662,7 +665,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "tags" to tags
                     )
                 }
-                
+
                 val response = mapOf(
                     "timestamp" to System.currentTimeMillis(),
                     "registryVersion" to "2.0",
@@ -692,7 +695,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "logStreamClients" to SseLogAppender.getClientCount()
                     )
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -703,31 +706,31 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         // Detailed repository information API
-        app.get("/api/registry/repositories/{name}") { ctx ->
+        app.get("/api/registry/repositories/<name>") { ctx ->
             val repoName = ctx.pathParam("name")
             logger.info("Getting detailed information for repository: $repoName")
-            
+
             try {
                 val tags = blobStore.listTags(repoName)
                 val tagDetails = tags.map { tag ->
                     val imageVersion = ImageVersion(repoName, tag)
                     val hasManifest = blobStore.hasManifest(imageVersion)
                     val digest = if (hasManifest) blobStore.digestForManifest(imageVersion).digestString else null
-                    
+
                     mapOf(
                         "tag" to tag,
                         "hasManifest" to hasManifest,
                         "digest" to digest
                     )
                 }
-                
+
                 val response = mapOf(
                     "name" to repoName,
                     "tagCount" to tags.size,
                     "tags" to tagDetails,
                     "timestamp" to System.currentTimeMillis()
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -740,23 +743,23 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // Blob information API
         app.get("/api/registry/blobs") { ctx ->
             logger.info("Getting blob information...")
-            
+
             try {
                 val blobList = mutableListOf<Map<String, Any>>()
                 var totalBytes = 0L
                 val uniqueBlobs = mutableSetOf<String>()
                 var uniqueBytes = 0L
-                
+
                 blobStore.eachBlob { blobRow ->
                     val blobSize = blobRow.content.size.toLong()
                     totalBytes += blobSize
-                    
+
                     // Track unique blobs by digest
                     val digest = blobRow.digest
                     if (digest != null && uniqueBlobs.add(digest)) {
                         uniqueBytes += blobSize
                     }
-                    
+
                     blobList.add(mapOf(
                         "digest" to (digest ?: "unknown"),
                         "sessionID" to blobRow.sessionID,
@@ -764,7 +767,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "size" to blobSize
                     ))
                 }
-                
+
                 val response = mapOf(
                     "totalBlobs" to blobList.size,
                     "uniqueBlobs" to uniqueBlobs.size,
@@ -774,7 +777,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "blobs" to blobList,
                     "timestamp" to System.currentTimeMillis()
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -787,33 +790,33 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // Storage statistics API
         app.get("/api/registry/storage") { ctx ->
             logger.info("Getting storage statistics...")
-            
+
             try {
                 var totalBytes = 0L
                 val uniqueBlobs = mutableSetOf<String>()
                 var uniqueBytes = 0L
                 val blobCounts = mutableMapOf<String, Int>()
-                
+
                 blobStore.eachBlob { blobRow ->
                     val blobSize = blobRow.content.size.toLong()
                     totalBytes += blobSize
-                    
+
                     val digest = blobRow.digest
                     if (digest != null) {
                         // Count references to each unique blob
                         blobCounts[digest] = blobCounts.getOrDefault(digest, 0) + 1
-                        
+
                         // Track unique blobs
                         if (uniqueBlobs.add(digest)) {
                             uniqueBytes += blobSize
                         }
                     }
                 }
-                
+
                 val deduplicationRatio = if (totalBytes > 0) (uniqueBytes.toDouble() / totalBytes.toDouble()) else 0.0
                 val spaceSavings = totalBytes - uniqueBytes
                 val spaceSavingsPercent = if (totalBytes > 0) ((spaceSavings.toDouble() / totalBytes.toDouble()) * 100.0) else 0.0
-                
+
                 // Find most referenced blobs
                 val blobSizes = mutableMapOf<String, Long>()
                 blobStore.eachBlob { blobRow ->
@@ -822,7 +825,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         blobSizes[digest] = blobRow.content.size.toLong()
                     }
                 }
-                
+
                 val mostReferencedBlobs = blobCounts.entries
                     .sortedByDescending { it.value }
                     .take(10)
@@ -833,7 +836,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                             "size" to (blobSizes[digest] ?: 0L)
                         )
                     }
-                
+
                 val response = mapOf(
                     "storage" to mapOf(
                         "totalBytes" to totalBytes,
@@ -850,7 +853,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "mostReferencedBlobs" to mostReferencedBlobs,
                     "timestamp" to System.currentTimeMillis()
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -863,7 +866,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // Session tracking API
         app.get("/api/registry/sessions") { ctx ->
             logger.info("Getting active session information...")
-            
+
             try {
                 // Since SessionTracker doesn't track active sessions, return empty list
                 // This could be enhanced in the future to track active sessions
@@ -872,7 +875,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "totalActiveSessions" to 0,
                     "timestamp" to System.currentTimeMillis()
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -885,11 +888,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // Comprehensive health check API
         app.get("/api/registry/health") { ctx ->
             logger.info("Performing comprehensive health check...")
-            
+
             try {
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
-                
+
                 // Perform basic connectivity tests
                 val canListRepos = try {
                     blobStore.listRepositories()
@@ -898,7 +901,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     logger.warn("Failed to list repositories during health check: ${e.message}")
                     false
                 }
-                
+
                 val canGetStats = try {
                     blobStore.getGarbageCollectionStats()
                     true
@@ -906,9 +909,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     logger.warn("Failed to get GC stats during health check: ${e.message}")
                     false
                 }
-                
+
                 val healthStatus = if (canListRepos && canGetStats) "healthy" else "degraded"
-                
+
                 val response = mapOf(
                     "status" to healthStatus,
                     "timestamp" to System.currentTimeMillis(),
@@ -931,7 +934,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         emptyList<String>()
                     }
                 )
-                
+
                 ctx.contentType("application/json")
                 ctx.json(response)
             } catch (e: Exception) {
@@ -954,14 +957,14 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     ctx.json(mapOf("success" to true, "message" to "No authentication required"))
                     return@post
                 }
-                
+
                 val body = ctx.body()
                 // Simple JSON parsing for username/password
                 val usernameMatch = Regex("\"username\"\\s*:\\s*\"([^\"]+)\"").find(body)
                 val passwordMatch = Regex("\"password\"\\s*:\\s*\"([^\"]+)\"").find(body)
                 val username = usernameMatch?.groupValues?.get(1)
                 val password = passwordMatch?.groupValues?.get(1)
-                
+
                 if (username == Config.WEB_AUTH_USERNAME && password == Config.WEB_AUTH_PASSWORD) {
                     val token = "web-token-$username"
                     ctx.json(mapOf(
@@ -978,11 +981,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             // Web interface status endpoint
             app.get("/api/web/status") { ctx ->
                 ctx.requireWebAuth()
-                
+
                 try {
                     val repositories = blobStore.listRepositories()
                     val stats = blobStore.getGarbageCollectionStats()
-                
+
                     val response = mapOf(
                         "repositories" to repositories.size,
                         "totalBlobs" to stats.totalBlobs,
@@ -992,11 +995,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                         "lastGcRun" to "2024-01-01T00:00:00Z", // You'd track this in production
                         "logStreamClients" to SseLogAppender.getClientCount()
                     )
-                    
+
                     ctx.json(response)
                 } catch (e: Exception) {
                     logger.error("Error getting web status: ${e.message}", e)
-                    
+
                     // Check if this is a database corruption error
                     if (e.message?.contains("File corrupted") == true || e.message?.contains("MVStoreException") == true) {
                         logger.error("Database corruption detected in web status endpoint! Attempting recovery...")
@@ -1028,20 +1031,20 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                             return@get
                         }
                     }
-                    
+
                     ctx.status(500)
                     ctx.json(mapOf("error" to "Internal Server Error: ${e.message}"))
                 }
             }
-            
+
             // Log level control endpoint for stress testing
             app.post("/api/web/log-level") { ctx ->
                 ctx.requireWebAuth()
-                
+
                 try {
                     val requestBody = ctx.bodyAsClass<Map<String, String>>(Map::class.java)
-                    val level = requestBody["level"]?.toUpperCase()
-                    
+                    val level = requestBody["level"]?.uppercase()
+
                     when (level) {
                         "TRACE" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.TRACE)
                         "DEBUG" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.DEBUG)
@@ -1054,7 +1057,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                             return@post
                         }
                     }
-                    
+
                     ctx.json(mapOf("message" to "Log level set to $level", "level" to level))
                 } catch (e: Exception) {
                     logger.error("Error setting log level: ${e.message}", e)
@@ -1062,7 +1065,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     ctx.json(mapOf("error" to "Failed to set log level: ${e.message}"))
                 }
             }
-            
+
         }
 
     }
@@ -1074,7 +1077,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.status(404)
             ctx.result("Not found")
         } else {
-            logger.debug("We DO have $digest")
+            logger.trace("We DO have $digest")
             ctx.status(200)
             ctx.result("OK")
         }
@@ -1082,7 +1085,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
     private fun handleManifestExistenceCheck(ctx: io.javalin.http.Context, imageVersion: ImageVersion, logger: KLogger) {
         if(blobStore.hasManifest(imageVersion)) {
-            logger.debug("We DO have manifest for {}!", imageVersion)
+            logger.trace("We DO have manifest for {}!", imageVersion)
             ctx.status(200)
         } else {
             logger.debug("We DO NOT have manifest for {}!", imageVersion)
@@ -1109,7 +1112,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     private fun extractBlobDigestsFromManifest(manifestJson: String): Set<String> {
         val digests = mutableSetOf<String>()
         val digestPattern = """"digest"\s*:\s*"([^"]+)"""".toRegex()
-        
+
         try {
             // Use pre-compiled regex for maximum performance
             // This is 10-50x faster than full JSON deserialization
@@ -1124,7 +1127,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             logger.warn("Failed to extract digests from manifest: ${e.message}")
             // This should rarely happen with regex, but keep as safety net
         }
-        
+
         return digests
     }
 }
