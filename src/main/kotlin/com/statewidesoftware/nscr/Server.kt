@@ -579,7 +579,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
 
         // Delete entire repository (all manifests/tags)
-        app.delete("/v2/{name}") { ctx ->
+        app.delete("/v2/<name>") { ctx ->
             val name = ctx.pathParam("name")
             logger.info("Deleting repository: $name")
 
@@ -706,7 +706,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         // Detailed repository information API
-        app.get("/api/registry/repositories/{name}") { ctx ->
+        app.get("/api/registry/repositories/<name>") { ctx ->
             val repoName = ctx.pathParam("name")
             logger.info("Getting detailed information for repository: $repoName")
 
