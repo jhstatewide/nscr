@@ -30,14 +30,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     private val dataSource: JdbcDataSource = JdbcDataSource()
     private val jdbi: Jdbi
     private val logger = LoggerFactory.getLogger("H2BlobStore")
-    
+
     // Pre-compiled regex patterns for ultra-fast digest extraction
     private val digestPattern = """"digest"\s*:\s*"([^"]+)"""".toRegex()
     private val cleanupExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "blobstore-cleanup").apply { isDaemon = true }
     }
     private val shutdownLock = Any()
-    
+
     // Recovery tracking to prevent infinite retry loops
     private var recoveryAttempts = 0
     private val maxRecoveryAttempts = 3
@@ -52,7 +52,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             append(";AUTOCOMMIT=TRUE")
             append(";CACHE_SIZE=8192")  // Increase cache size for better performance
         }
-        
+
         dataSource.setURL(dbUrl)
         dataSource.user = Config.DATABASE_USER
         dataSource.password = Config.DATABASE_PASSWORD
@@ -60,11 +60,11 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         // Connection pooling is handled by the JVM and JDBI
         this.jdbi = Jdbi.create(dataSource)
         provisionTables()
-        
+
         logger.debug("H2BlobStore initialized with database path: ${dataDirectory.toAbsolutePath()}")
         logger.debug("Database user: ${Config.DATABASE_USER}, max connections: ${Config.DATABASE_MAX_CONNECTIONS}")
         logger.debug("Database URL: $dbUrl")
-        
+
         // Register shutdown hook for proper cleanup
         Runtime.getRuntime().addShutdownHook(Thread {
             logger.info("Shutting down H2BlobStore...")
@@ -77,8 +77,8 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         try {
             jdbi.useTransaction<RuntimeException> { handle: Handle ->
                 handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, uploadedAt bigint, CONSTRAINT unique_digest UNIQUE (digest));")
-                handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
-                
+                handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), uploadedAt bigint, constraint unique_image_version unique (name, tag));")
+
                 // Add size column if it doesn't exist (for existing databases)
                 try {
                     handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS size bigint")
@@ -86,7 +86,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     // Column might already exist, ignore error
                     logger.debug("Size column already exists or couldn't be added: ${e.message}")
                 }
-                
+
                 // Add uploadedAt column if it doesn't exist (for existing databases)
                 try {
                     handle.execute("ALTER TABLE blobs ADD COLUMN IF NOT EXISTS uploadedAt bigint")
@@ -94,7 +94,15 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     // Column might already exist, ignore error
                     logger.debug("uploadedAt column already exists or couldn't be added: ${e.message}")
                 }
-                
+
+                // Add uploadedAt column to manifests table if it doesn't exist (for existing databases)
+                try {
+                    handle.execute("ALTER TABLE manifests ADD COLUMN IF NOT EXISTS uploadedAt bigint")
+                } catch (e: Exception) {
+                    // Column might already exist, ignore error
+                    logger.debug("uploadedAt column already exists in manifests or couldn't be added: ${e.message}")
+                }
+
                 handle.commit()
                 logger.debug("H2 Blobstore initialized!")
             }
@@ -105,7 +113,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     // Retry initialization after successful recovery
                     jdbi.useTransaction<RuntimeException> { handle: Handle ->
                         handle.execute("CREATE TABLE IF NOT EXISTS blobs(sessionID varchar(256), blobNumber int, digest varchar(256), content blob, size bigint, uploadedAt bigint, CONSTRAINT unique_digest UNIQUE (digest));")
-                        handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), constraint unique_image_version unique (name, tag));")
+                        handle.execute("CREATE TABLE IF NOT EXISTS manifests(name varchar(256), tag varchar(256), manifest clob, digest varchar(256), uploadedAt bigint, constraint unique_image_version unique (name, tag));")
                         handle.commit()
                         logger.info("H2 Blobstore recovered and reinitialized!")
                     }
@@ -118,7 +126,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             }
         }
     }
-    
+
 
     private val uploadedUUIDs = mutableSetOf<Digest>()
 
@@ -241,7 +249,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         .map { rs, _ -> rs.getBinaryStream("content") }
                         .firstOrNull()
                         ?: throw NoSuchElementException("Blob not found for session ${sessionID.id}")
-                    
+
                     // Calculate digest of the blob content
                     val tempFile = File.createTempFile("digest_validation", "tmp")
                     try {
@@ -250,18 +258,18 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                                 inputStream.copyTo(outputStream)
                             }
                         }
-                        
+
                         val calculatedDigest = calculateSHA256(tempFile)
                         val expectedDigest = if (digest.digestString.startsWith("sha256:")) {
                             digest.digestString.substring(7) // Remove "sha256:" prefix
                         } else {
                             digest.digestString
                         }
-                        
+
                         if (calculatedDigest != expectedDigest) {
                             throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
                         }
-                        
+
                         // Try to update the blob with the validated digest
                         // If this fails due to unique constraint violation, it means another session
                         // already claimed this digest, so we can safely delete this session's blob
@@ -269,7 +277,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                             val query = "update blobs set digest = ? where sessionID = ?"
                             val updatedRows = handle.createUpdate(query).bind(0, digest.digestString)
                                 .bind(1, sessionID.id).execute()
-                            
+
                             if (updatedRows > 0) {
                                 logger.debug("Session ID ${sessionID.id} blob tagged with ${digest.digestString}!")
                             } else {
@@ -279,16 +287,16 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                             // Check if this is a unique constraint violation (could be wrapped in UnableToExecuteStatementException)
                             val isUniqueConstraintViolation = e.message?.contains("Unique index or primary key violation") == true ||
                                     e.cause?.message?.contains("Unique index or primary key violation") == true
-                            
+
                             if (isUniqueConstraintViolation) {
                                 // Another session already claimed this digest - this is a duplicate upload
                                 // We can safely delete this session's blob since the content is identical
                                 logger.debug("Blob with digest ${digest.digestString} already exists, removing duplicate from session ${sessionID.id}")
-                                
+
                                 val deletedRows = handle.createUpdate("DELETE FROM blobs WHERE sessionID = ?")
                                     .bind(0, sessionID.id)
                                     .execute()
-                                
+
                                 if (deletedRows > 0) {
                                     logger.debug("Removed duplicate blob from session ${sessionID.id} (digest already exists)")
                                 }
@@ -323,9 +331,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             try {
                 // Get all blob chunks for this session, ordered by blobNumber
                 val blobChunks = handle.createQuery("""
-                    SELECT blobNumber, content 
-                    FROM blobs 
-                    WHERE sessionID = :sessionID 
+                    SELECT blobNumber, content
+                    FROM blobs
+                    WHERE sessionID = :sessionID
                     ORDER BY blobNumber
                 """)
                     .bind("sessionID", sessionID.id)
@@ -373,11 +381,11 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     } else {
                         digest.digestString
                     }
-                    
+
                     if (calculatedDigest != expectedDigest) {
                         throw IllegalStateException("Digest mismatch for session ${sessionID.id}: expected $expectedDigest, calculated $calculatedDigest")
                     }
-                    
+
                     logger.debug("Digest verification successful for session ${sessionID.id}: $calculatedDigest")
 
                     // Try to insert the stitched blob with the digest
@@ -408,18 +416,18 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         // Check if this is a unique constraint violation (could be wrapped in UnableToExecuteStatementException)
                         val isUniqueConstraintViolation = e.message?.contains("Unique index or primary key violation") == true ||
                                 e.cause?.message?.contains("Unique index or primary key violation") == true
-                        
+
                         if (isUniqueConstraintViolation) {
                             // Another session already claimed this digest - this is a duplicate upload
                             // We can safely delete this session's chunks since the content is identical
                             logger.debug("Blob with digest ${digest.digestString} already exists, removing duplicate chunks from session ${sessionID.id}")
-                            
+
                             val deleteStatement = handle.connection.prepareStatement(
                                 "DELETE FROM blobs WHERE sessionID = ? AND digest IS NULL"
                             )
                             deleteStatement.setString(1, sessionID.id)
                             val deletedChunks = deleteStatement.executeUpdate()
-                            
+
                             logger.debug("Removed $deletedChunks duplicate chunks from session ${sessionID.id} (digest already exists)")
                         } else {
                             // Re-throw other exceptions
@@ -450,17 +458,19 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             try {
                 // Use MERGE (UPSERT) to handle the case where manifest already exists
                 // This is atomic and avoids race conditions
+                val currentTime = System.currentTimeMillis()
                 handle.createUpdate("""
-                    MERGE INTO MANIFESTS (name, tag, manifest, digest) 
-                    KEY (name, tag) 
-                    VALUES (:name, :tag, :manifest, :digest)
+                    MERGE INTO MANIFESTS (name, tag, manifest, digest, uploadedAt)
+                    KEY (name, tag)
+                    VALUES (:name, :tag, :manifest, :digest, :uploadedAt)
                 """)
                     .bind("name", image.name)
                     .bind("tag", image.tag)
                     .bind("manifest", manifestJson)
                     .bind("digest", "sha256:${digest.digestString}")
+                    .bind("uploadedAt", currentTime)
                     .execute()
-                
+
                 logger.debug("Manifest upserted for $image with digest: sha256:${digest.digestString}")
                 handle.commit()
             } catch (e: SQLException) {
@@ -629,7 +639,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("name", image.name)
                     .bind("tag", image.tag)
                     .execute()
-                
+
                 val wasDeleted = deletedRows > 0
                 logger.info("Attempted to remove manifest for $image, deleted $deletedRows rows (existed: $wasDeleted)")
                 wasDeleted
@@ -649,10 +659,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 // Optimized query: use GROUP BY instead of DISTINCT for better performance
                 // and add index hint if available
                 handle.createQuery("""
-                    SELECT name 
-                    FROM manifests 
+                    SELECT name
+                    FROM manifests
                     GROUP BY name
-                    ORDER BY name
+                    ORDER BY MAX(uploadedAt) DESC NULLS LAST, name
                 """).map { rs, _ -> rs.getString("name") }
                     .list()
             } catch (e: SQLException) {
@@ -687,12 +697,12 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         val deletedManifests = jdbi.inTransaction<Int, Exception> { handle ->
             try {
                 logger.info("Deleting repository: $repository")
-                
+
                 // Delete all manifests for this repository
                 val deleted = handle.createUpdate("DELETE FROM manifests WHERE name = :name")
                     .bind("name", repository)
                     .execute()
-                
+
                 logger.info("Deleted $deleted manifests for repository: $repository")
                 deleted
             } catch (e: SQLException) {
@@ -703,10 +713,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 throw e
             }
         }
-        
+
         // Trigger garbage collection to remove unreferenced blobs
         garbageCollect()
-        
+
         return deletedManifests
     }
 
@@ -719,9 +729,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             val totalSpace = fileStore.totalSpace
             val freeSpace = fileStore.usableSpace
             val freeSpacePercent = (freeSpace.toDouble() / totalSpace.toDouble()) * 100.0
-            
+
             logger.debug("Disk space: ${String.format("%.2f", freeSpacePercent)}% free (${freeSpace / (1024 * 1024)} MB free of ${totalSpace / (1024 * 1024)} MB total)")
-            
+
             freeSpacePercent < Config.CLEANUP_MIN_FREE_SPACE_PERCENT
         } catch (e: Exception) {
             logger.warn("Failed to check disk space: ${e.message}")
@@ -737,34 +747,34 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             var blobsRemoved = 0
             var spaceFreed = 0L
             var sessionsRemoved = 0
-            
+
             try {
                 logger.info("Starting incomplete upload cleanup (max age: ${Config.CLEANUP_MAX_AGE_HOURS} hours)")
-                
+
                 // Find incomplete uploads (sessions with null digests)
                 val incompleteSessions = handle.createQuery("""
-                    SELECT DISTINCT sessionID 
-                    FROM blobs 
+                    SELECT DISTINCT sessionID
+                    FROM blobs
                     WHERE digest IS NULL
                 """).map { rs, _ -> rs.getString("sessionID") }
                     .list()
-                
+
                 logger.info("Found ${incompleteSessions.size} incomplete upload sessions")
-                
+
                 // Remove blobs for incomplete sessions
                 for (sessionId in incompleteSessions) {
                     val totalSize = handle.createQuery("""
-                        SELECT SUM(LENGTH(content)) as total_size 
-                        FROM blobs 
+                        SELECT SUM(LENGTH(content)) as total_size
+                        FROM blobs
                         WHERE sessionID = :sessionID
                     """).bind("sessionID", sessionId)
                         .map { rs, _ -> rs.getLong("total_size") }
                         .firstOrNull() ?: 0L
-                    
+
                     val deleted = handle.createUpdate("DELETE FROM blobs WHERE sessionID = :sessionID")
                         .bind("sessionID", sessionId)
                         .execute()
-                    
+
                     if (deleted > 0) {
                         blobsRemoved += deleted
                         spaceFreed += totalSize
@@ -772,14 +782,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         logger.debug("Removed $deleted blobs from incomplete session $sessionId ($totalSize bytes)")
                     }
                 }
-                
+
                 logger.info("Cleanup completed: $blobsRemoved blobs removed, $spaceFreed bytes freed, $sessionsRemoved sessions cleaned")
-                
+
             } catch (e: Exception) {
                 logger.error("Error during incomplete upload cleanup: ${e.message}", e)
                 // Return partial results on error
             }
-            
+
             CleanupResult(blobsRemoved, spaceFreed, sessionsRemoved)
         }
     }
@@ -792,14 +802,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             logger.info("Incomplete upload cleanup is disabled")
             return
         }
-        
+
         logger.debug("Starting periodic incomplete upload cleanup (interval: ${Config.CLEANUP_INTERVAL_MINUTES} minutes)")
-        
+
         cleanupExecutor.scheduleAtFixedRate({
             try {
                 val diskSpaceLow = isDiskSpaceLow()
                 val shouldCleanup = diskSpaceLow || true // Always run based on age, also run if disk space is low
-                
+
                 if (shouldCleanup) {
                     val result = cleanupIncompleteUploads()
                     if (result.blobsRemoved > 0) {
@@ -834,70 +844,70 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 var blobsRemoved = 0
                 var spaceFreed = 0L
                 var manifestsRemoved = 0
-                
+
                 try {
                     logger.info("Starting comprehensive garbage collection...")
-                    
+
                     // Ensure we have a clean transaction state
                     handle.execute("SET LOCK_TIMEOUT 30000") // 30 second timeout
-                    
+
                     // DEBUG: Log initial state
                     val initialBlobCount = handle.createQuery("SELECT COUNT(*) FROM blobs WHERE digest IS NOT NULL")
                         .map { rs, _ -> rs.getLong(1) }.first()
                     val initialManifestCount = handle.createQuery("SELECT COUNT(*) FROM manifests")
                         .map { rs, _ -> rs.getLong(1) }.first()
                     logger.info("GC DEBUG: Initial state - $initialBlobCount blobs, $initialManifestCount manifests")
-                
+
                 // Step 1: SAFE approach - Only remove blobs without digests that are old enough to be truly orphaned
                 // We'll be conservative to avoid removing blobs from active push sessions
                 // Only remove blobs with null digest that are older than 2 hours (plenty of time for any push to complete)
-                
+
                 val cutoffTime = System.currentTimeMillis() - (2 * 60 * 60 * 1000) // 2 hours ago
-                
+
                 val orphanedNullDigestBlobs = handle.createQuery("""
-                    SELECT COUNT(*) as count, SUM(LENGTH(content)) as total_size 
-                    FROM blobs 
-                    WHERE digest IS NULL 
+                    SELECT COUNT(*) as count, SUM(LENGTH(content)) as total_size
+                    FROM blobs
+                    WHERE digest IS NULL
                     AND (uploadedAt IS NULL OR uploadedAt < ?)
                 """).bind(0, cutoffTime).map { rs, _ ->
                     Pair(rs.getInt("count"), rs.getLong("total_size"))
                 }.firstOrNull()
-                
+
                 if (orphanedNullDigestBlobs != null && orphanedNullDigestBlobs.first > 0) {
                     val deletedOrphanedBlobs = handle.createUpdate("""
-                        DELETE FROM blobs 
-                        WHERE digest IS NULL 
+                        DELETE FROM blobs
+                        WHERE digest IS NULL
                         AND (uploadedAt IS NULL OR uploadedAt < ?)
                     """).bind(0, cutoffTime).execute()
-                    
+
                     blobsRemoved += deletedOrphanedBlobs
                     spaceFreed += orphanedNullDigestBlobs.second
                     logger.debug("Removed $deletedOrphanedBlobs orphaned blobs with null digest (older than 2 hours), freed ${orphanedNullDigestBlobs.second} bytes")
                 } else {
                     logger.debug("No orphaned blobs with null digest found (all are recent and may be part of active uploads)")
                 }
-                
+
                 // Log how many blobs with null digest we're preserving (likely active uploads)
                 val activeUploadBlobs = handle.createQuery("""
-                    SELECT COUNT(*) as count 
-                    FROM blobs 
-                    WHERE digest IS NULL 
+                    SELECT COUNT(*) as count
+                    FROM blobs
+                    WHERE digest IS NULL
                     AND (uploadedAt IS NULL OR uploadedAt >= ?)
                 """).bind(0, cutoffTime).map { rs, _ -> rs.getInt("count") }.firstOrNull() ?: 0
-                
+
                 if (activeUploadBlobs > 0) {
                     logger.info("GC SAFETY: Preserving $activeUploadBlobs blobs with null digest uploaded within last 2 hours (likely active uploads)")
                 }
-                
+
                 // Step 2: Find all blob digests referenced by manifests
                 val referencedDigests = mutableSetOf<String>()
-                
+
                 val manifests = handle.createQuery("SELECT name, tag, manifest FROM manifests")
                     .map { rs, _ -> Triple(rs.getString("name"), rs.getString("tag"), rs.getString("manifest")) }
                     .list()
-                
+
                 logger.info("GC DEBUG: Processing ${manifests.size} manifests")
-                
+
                 for ((name, tag, manifestJson) in manifests) {
                     try {
                         val manifestDigests = extractBlobDigestsFromManifest(manifestJson)
@@ -907,26 +917,26 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         logger.warn("Failed to parse manifest $name:$tag for garbage collection: ${e.message}")
                     }
                 }
-                
+
                 logger.info("GC DEBUG: Found ${referencedDigests.size} unique referenced blob digests: ${referencedDigests.joinToString(", ")}")
-                
+
                 // Step 3: Remove unreferenced blobs using the correctly extracted referenced digests
                 // First, let's get the list of all blobs and see which ones are unreferenced
                 val allBlobs = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NOT NULL")
                     .map { rs, _ -> rs.getString("digest") }
                     .list()
-                
+
                 logger.info("GC DEBUG: Found ${allBlobs.size} total blobs in database")
-                
+
                 val unreferencedBlobsList = allBlobs.filter { it !in referencedDigests }
                 logger.info("GC DEBUG: Found ${unreferencedBlobsList.size} unreferenced blobs: ${unreferencedBlobsList.joinToString(", ")}")
-                
+
                 // Calculate space to be freed for unreferenced blobs
                 val estimatedSpaceToFree = if (unreferencedBlobsList.isNotEmpty()) {
                     val placeholders = unreferencedBlobsList.joinToString(",") { "?" }
                     handle.createQuery("""
-                        SELECT SUM(size) as total_size 
-                        FROM blobs 
+                        SELECT SUM(size) as total_size
+                        FROM blobs
                         WHERE digest IN ($placeholders)
                     """).apply {
                         unreferencedBlobsList.forEachIndexed { index, digest ->
@@ -937,14 +947,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 } else {
                     0L
                 }
-                
+
                 logger.info("GC DEBUG: About to remove ${unreferencedBlobsList.size} unreferenced blobs, estimated $estimatedSpaceToFree bytes")
-                
+
                 // Remove unreferenced blobs using the correct list
                 val deletedUnreferencedBlobs = if (unreferencedBlobsList.isNotEmpty()) {
                     val placeholders = unreferencedBlobsList.joinToString(",") { "?" }
                     handle.createUpdate("""
-                        DELETE FROM blobs 
+                        DELETE FROM blobs
                         WHERE digest IN ($placeholders)
                     """).apply {
                         unreferencedBlobsList.forEachIndexed { index, digest ->
@@ -954,13 +964,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 } else {
                     0
                 }
-                
+
                 if (deletedUnreferencedBlobs > 0) {
                     blobsRemoved += deletedUnreferencedBlobs
                     spaceFreed += estimatedSpaceToFree
                     logger.info("GC DEBUG: Successfully removed $deletedUnreferencedBlobs unreferenced blobs, freed $estimatedSpaceToFree bytes")
                 }
-                
+
                 // Step 4: Remove truly orphaned manifests (manifests that reference blobs that never existed)
                 // We need to distinguish between:
                 // 1. Manifests that reference blobs that were never stored (truly orphaned - should be removed)
@@ -968,10 +978,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 //
                 // The key insight: A manifest is truly orphaned if it references blobs that were NEVER stored,
                 // not blobs that were correctly identified as unreferenced and removed in Step 3.
-                
+
                 // First, collect all blob digests that were removed in Step 3
                 val removedBlobDigests = mutableSetOf<String>()
-                
+
                 // Find all manifests to check for orphaned blob references
                 val allManifests = handle.createQuery("""
                     SELECT m.name, m.tag, m.digest, m.manifest
@@ -983,26 +993,26 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     val manifest = rs.getString("manifest")
                     listOf(name, tag, digest, manifest)
                 }.list()
-                
+
                 logger.info("GC DEBUG: Found ${allManifests.size} manifests to check for orphaned blob references")
-                
+
                 logger.info("GC DEBUG: Blobs removed in Step 3: ${removedBlobDigests.size}")
-                
+
                 for (manifestData in allManifests) {
                     val name = manifestData[0]
                     val tag = manifestData[1]
                     val digest = manifestData[2]
                     val manifestJson = manifestData[3]
-                    
+
                     try {
                         val manifestBlobDigests = extractBlobDigestsFromManifest(manifestJson)
-                        
+
                         // Check if this manifest references any blobs that were NEVER stored
                         // (not just blobs that were removed in Step 3)
                         logger.info("Checking manifest $name:$tag for orphaned blobs. Manifest references: $manifestBlobDigests")
                         logger.info("Referenced digests: $referencedDigests")
                         logger.info("Removed blob digests: $removedBlobDigests")
-                        
+
                         val hasNeverStoredBlobs = manifestBlobDigests.any { blobDigest ->
                             // This blob was never stored if it doesn't exist in the current blobs table
                             // and wasn't removed in Step 3 (legitimately garbage collected)
@@ -1011,21 +1021,21 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                                 .bind("digest", blobDigest)
                                 .map { rs, _ -> rs.getInt(1) }
                                 .firstOrNull()?.let { it > 0 } ?: false).not()
-                            
+
                             logger.info("Blob $blobDigest: notRemoved=$notRemoved, notExists=$notExists")
-                            
+
                             notRemoved && notExists
                         }
-                        
+
                         logger.info("hasNeverStoredBlobs: $hasNeverStoredBlobs")
                         if (hasNeverStoredBlobs) {
                             val deleted = handle.createUpdate("""
-                                DELETE FROM manifests 
+                                DELETE FROM manifests
                                 WHERE name = :name AND tag = :tag
                             """).bind("name", name)
                                 .bind("tag", tag)
                                 .execute()
-                            
+
                             if (deleted > 0) {
                                 manifestsRemoved++
                                 logger.debug("Removed truly orphaned manifest $name:$tag (digest: $digest) - references blobs that were never stored")
@@ -1037,21 +1047,21 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         logger.warn("Failed to parse manifest $name:$tag for orphaned check: ${e.message}")
                     }
                 }
-                
+
                     logger.info("GC DEBUG: Garbage collection completed: $blobsRemoved blobs removed, $spaceFreed bytes freed, $manifestsRemoved manifests removed")
-                    
+
                     // DEBUG: Log final state
                     val finalBlobCount = handle.createQuery("SELECT COUNT(*) FROM blobs WHERE digest IS NOT NULL")
                         .map { rs, _ -> rs.getLong(1) }.first()
                     val finalManifestCount = handle.createQuery("SELECT COUNT(*) FROM manifests")
                         .map { rs, _ -> rs.getLong(1) }.first()
                     logger.info("GC DEBUG: Final state - $finalBlobCount blobs, $finalManifestCount manifests")
-                    
+
                 } catch (e: Exception) {
                     logger.error("Error during garbage collection: ${e.message}", e)
                     // Return partial results on error
                 }
-                
+
                 GarbageCollectionResult(blobsRemoved, spaceFreed, manifestsRemoved)
             }
         } catch (e: Exception) {
@@ -1080,7 +1090,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
      */
     private fun extractBlobDigestsFromManifest(manifestJson: String): Set<String> {
         val digests = mutableSetOf<String>()
-        
+
         try {
             // Use pre-compiled regex for maximum performance
             // This is 10-50x faster than full JSON deserialization
@@ -1091,14 +1101,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     digests.add(digest)
                 }
             }
-            
+
             logger.debug("GC DEBUG: Extracted ${digests.size} digests from manifest: ${digests.joinToString(", ")}")
-            
+
         } catch (e: Exception) {
             logger.warn("Failed to extract digests from manifest: ${e.message}")
             // This should rarely happen with regex, but keep as safety net
         }
-        
+
         return digests
     }
 
@@ -1108,24 +1118,24 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 // Get total counts - these are fast
                 val totalBlobs = handle.createQuery("SELECT COUNT(*) FROM blobs WHERE digest IS NOT NULL")
                     .map { rs, _ -> rs.getLong(1) }.first()
-                
+
                 val totalManifests = handle.createQuery("SELECT COUNT(*) FROM manifests")
                     .map { rs, _ -> rs.getLong(1) }.first()
-                
+
                 // Count orphaned manifests - this is fast with proper indexing
                 val orphanedManifests = handle.createQuery("""
-                    SELECT COUNT(*) 
+                    SELECT COUNT(*)
                     FROM manifests m
                     LEFT JOIN blobs b ON m.digest = b.digest
                     WHERE b.digest IS NULL
                 """).map { rs, _ -> rs.getLong(1) }.first()
-                
+
                 // For unreferenced blobs, we need to extract referenced digests from manifests first
                 val referencedDigests = mutableSetOf<String>()
                 val manifests = handle.createQuery("SELECT manifest FROM manifests")
                     .map { rs, _ -> rs.getString("manifest") }
                     .list()
-                
+
                 for (manifestJson in manifests) {
                     try {
                         val manifestDigests = extractBlobDigestsFromManifest(manifestJson)
@@ -1134,21 +1144,21 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         logger.warn("Failed to parse manifest for garbage collection stats: ${e.message}")
                     }
                 }
-                
+
                 // Count unreferenced blobs by comparing against the extracted referenced digests
                 val allBlobs = handle.createQuery("SELECT digest FROM blobs WHERE digest IS NOT NULL")
                     .map { rs, _ -> rs.getString("digest") }
                     .list()
-                
+
                 val unreferencedBlobs = allBlobs.count { it !in referencedDigests }.toLong()
-                
+
                 // Calculate estimated space to free for unreferenced blobs
                 val estimatedSpaceToFree = if (unreferencedBlobs > 0) {
                     val unreferencedBlobsList = allBlobs.filter { it !in referencedDigests }
                     val placeholders = unreferencedBlobsList.joinToString(",") { "?" }
                     handle.createQuery("""
-                        SELECT SUM(size) 
-                        FROM blobs 
+                        SELECT SUM(size)
+                        FROM blobs
                         WHERE digest IN ($placeholders)
                     """).apply {
                         unreferencedBlobsList.forEachIndexed { index, digest ->
@@ -1158,7 +1168,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 } else {
                     0L
                 }
-                
+
                 GarbageCollectionStats(
                     totalBlobs = totalBlobs,
                     totalManifests = totalManifests,
@@ -1187,17 +1197,17 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             logger.error("Recovery already failed - refusing to attempt again")
             return false
         }
-        
+
         // Check if we've exceeded max attempts
         if (recoveryAttempts >= maxRecoveryAttempts) {
             logger.error("Maximum recovery attempts ($maxRecoveryAttempts) exceeded - marking as failed")
             isRecoveryFailed = true
             return false
         }
-        
+
         recoveryAttempts++
         logger.warn("Attempting database recovery (attempt $recoveryAttempts/$maxRecoveryAttempts)...")
-        
+
         return try {
             // Try to open a connection and run a simple query
             jdbi.withHandle<Boolean, Exception> { handle ->
@@ -1207,13 +1217,13 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
             }
         } catch (e: Exception) {
             logger.error("Database recovery failed on attempt $recoveryAttempts: ${e.message}", e)
-            
+
             // If this was the last attempt, mark as failed
             if (recoveryAttempts >= maxRecoveryAttempts) {
                 logger.error("All recovery attempts exhausted - marking database as unrecoverable")
                 isRecoveryFailed = true
             }
-            
+
             false
         }
     }
@@ -1226,25 +1236,25 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         logger.error("=".repeat(80))
         logger.error("FATAL DATABASE CORRUPTION - RECOVERY FAILED")
         logger.error("=".repeat(80))
-        
+
         // Basic information
         logger.error("Database Path: ${dataDirectory.toAbsolutePath()}")
         logger.error("Recovery Attempts: $recoveryAttempts/$maxRecoveryAttempts")
         logger.error("Original Exception: ${originalException.javaClass.simpleName}")
         logger.error("Original Message: ${originalException.message}")
-        
+
         // File system information
         try {
             val dbFile = dataDirectory.resolve("blobstore.mv.db")
             val traceFile = dataDirectory.resolve("blobstore.trace.db")
-            
+
             logger.error("Database Files:")
             logger.error("  blobstore.mv.db exists: ${dbFile.toFile().exists()}")
             if (dbFile.toFile().exists()) {
                 logger.error("  blobstore.mv.db size: ${dbFile.toFile().length()} bytes")
                 logger.error("  blobstore.mv.db last modified: ${java.util.Date(dbFile.toFile().lastModified())}")
             }
-            
+
             logger.error("  blobstore.trace.db exists: ${traceFile.toFile().exists()}")
             if (traceFile.toFile().exists()) {
                 logger.error("  blobstore.trace.db size: ${traceFile.toFile().length()} bytes")
@@ -1253,14 +1263,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         } catch (e: Exception) {
             logger.error("Error checking database files: ${e.message}")
         }
-        
+
         // Disk space information
         try {
             val fileStore = java.nio.file.Files.getFileStore(dataDirectory)
             val totalSpace = fileStore.totalSpace
             val freeSpace = fileStore.usableSpace
             val usedSpace = totalSpace - freeSpace
-            
+
             logger.error("Disk Space Information:")
             logger.error("  Total Space: ${totalSpace / (1024 * 1024 * 1024)} GB")
             logger.error("  Free Space: ${freeSpace / (1024 * 1024 * 1024)} GB")
@@ -1269,7 +1279,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         } catch (e: Exception) {
             logger.error("Error checking disk space: ${e.message}")
         }
-        
+
         // System information
         logger.error("System Information:")
         logger.error("  Java Version: ${System.getProperty("java.version")}")
@@ -1278,7 +1288,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         logger.error("  Max Memory: ${Runtime.getRuntime().maxMemory() / (1024 * 1024)} MB")
         logger.error("  Total Memory: ${Runtime.getRuntime().totalMemory() / (1024 * 1024)} MB")
         logger.error("  Free Memory: ${Runtime.getRuntime().freeMemory() / (1024 * 1024)} MB")
-        
+
         // Recovery recommendations
         logger.error("RECOVERY RECOMMENDATIONS:")
         logger.error("1. Check disk space - corruption often occurs when disk is full")
@@ -1289,14 +1299,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         logger.error("   rm -f ${dataDirectory.toAbsolutePath()}/blobstore.trace.db")
         logger.error("5. If this is production, contact your system administrator")
         logger.error("6. Consider implementing database backups to prevent data loss")
-        
+
         logger.error("=".repeat(80))
         logger.error("TERMINATING APPLICATION DUE TO UNRECOVERABLE DATABASE CORRUPTION")
         logger.error("=".repeat(80))
-        
+
         // Mark as failed to prevent further attempts
         isRecoveryFailed = true
-        
+
         // Terminate the application
         System.exit(1)
     }
@@ -1315,14 +1325,14 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
     fun cleanup() {
         try {
             logger.info("Starting H2BlobStore cleanup...")
-            
+
             // Shutdown cleanup executor first
             cleanupExecutor.shutdown()
             if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 logger.warn("Cleanup executor did not terminate gracefully, forcing shutdown")
                 cleanupExecutor.shutdownNow()
             }
-            
+
             // Synchronize the database shutdown to prevent concurrent access
             synchronized(this) {
                 try {
@@ -1346,7 +1356,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         logger.warn("Error executing H2 SHUTDOWN command: ${e.message}")
                     }
                 }
-                
+
                 // Close H2 DataSource connections properly
                 try {
                     dataSource.connection.close()
@@ -1354,7 +1364,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 } catch (e: Exception) {
                     logger.warn("Error closing H2 DataSource connections: ${e.message}")
                 }
-                
+
                 // Unload H2 engine
                 try {
                     org.h2.Driver.unload()
@@ -1363,7 +1373,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     logger.warn("Error unloading H2 database engine: ${e.message}")
                 }
             }
-            
+
             logger.info("H2BlobStore cleanup completed")
         } catch (e: Exception) {
             logger.error("Error during H2BlobStore cleanup: ${e.message}")
