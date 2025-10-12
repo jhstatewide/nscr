@@ -376,6 +376,19 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.result("OK")
         }
 
+        // List tags for a repository (supports slashes in name using <> syntax)
+        app.get("/v2/<name>/tags/list") { ctx ->
+            val name = ctx.pathParam("name")
+            logger.info("Tags list request - name: $name")
+            val tags = blobStore.listTags(name)
+            logger.info("Found tags for $name: $tags")
+            val response = mapOf(
+                "name" to name,
+                "tags" to tags
+            )
+            ctx.json(response)
+        }
+
         app.get("/v2/*/manifests/{tag}") { ctx ->
             val fullPath = ctx.path()
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
@@ -564,16 +577,6 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.json(response)
         }
 
-        // List tags for a repository
-        app.get("/v2/{name}/tags/list") { ctx ->
-            val name = ctx.pathParam("name")
-            val tags = blobStore.listTags(name)
-            val response = mapOf(
-                "name" to name,
-                "tags" to tags
-            )
-            ctx.json(response)
-        }
 
         // Delete entire repository (all manifests/tags)
         app.delete("/v2/{name}") { ctx ->
@@ -1040,7 +1043,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
                 try {
                     val requestBody = ctx.bodyAsClass<Map<String, String>>(Map::class.java)
-                    val level = requestBody["level"]?.toUpperCase()
+                    val level = requestBody["level"]?.uppercase()
 
                     when (level) {
                         "TRACE" -> SseLogAppender.setMinLogLevel(ch.qos.logback.classic.Level.TRACE)
