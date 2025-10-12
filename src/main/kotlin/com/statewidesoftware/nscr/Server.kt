@@ -218,6 +218,23 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
+        // SSE endpoint for repository updates
+        app.sse("/api/repositories/stream") { client ->
+            try {
+                SseRepositoryBroadcaster.addClient(client)
+                client.sendEvent("connected", "Repository stream started")
+
+                // Keep the connection alive
+                try {
+                    Thread.sleep(Long.MAX_VALUE) // Sleep indefinitely
+                } catch (e: InterruptedException) {
+                    // Connection closed
+                }
+            } catch (e: Exception) {
+                logger.error { "Error in repository SSE connection: ${e.message}" }
+            }
+        }
+
         // Shutdown endpoint (only enabled if configured)
         if (Config.SHUTDOWN_ENDPOINT_ENABLED) {
             app.post("/api/shutdown") { ctx ->
@@ -516,6 +533,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             logger.info("PUSH DEBUG: Adding manifest $name:$reference with digest $digestString")
             blobStore.addManifest(ImageVersion(name, reference), Digest(sha), body)
 
+            // Broadcast repository update
+            SseRepositoryBroadcaster.broadcastRepositoryUpdate("manifest_added", name)
+
             ctx.status(201)
             ctx.header("Location", Config.REGISTRY_URL)
             ctx.header("Docker-Content-Digest", digestString)
@@ -594,6 +614,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val deletedCount = blobStore.deleteRepository(name)
 
                 if (deletedCount > 0) {
+                    // Broadcast repository update
+                    SseRepositoryBroadcaster.broadcastRepositoryUpdate("repository_deleted", name)
+
                     ctx.status(202)
                     val response = mapOf(
                         "message" to "Repository deleted",

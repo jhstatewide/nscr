@@ -67,6 +67,7 @@ class RegistryWebInterface {
   private container: HTMLElement;
   private isAuthenticated = false;
   private eventSource: EventSource | null = null;
+  private repositoryEventSource: EventSource | null = null;
   private logs: LogEntry[] = [];
   private maxLogs = 500; // Reduced from 1000 to prevent memory issues
   private logDisplayUpdateThrottle: number | null = null;
@@ -223,6 +224,9 @@ class RegistryWebInterface {
 
     // Start auto-refresh for dashboard stats
     this.startDashboardAutoRefresh();
+
+    // Start repository streaming for live updates
+    this.startRepositoryStreaming();
 
     // Setup logout if authenticated
     if (this.isAuthenticated) {
@@ -830,6 +834,7 @@ class RegistryWebInterface {
   private logout() {
     this.isAuthenticated = false;
     this.stopLogStreaming();
+    this.stopRepositoryStreaming();
     this.initializeApp();
   }
 
@@ -880,6 +885,56 @@ class RegistryWebInterface {
       this.updateLiveIndicator(false);
       this.updateReconnectStatus('Disconnected');
     }
+  }
+
+  private startRepositoryStreaming() {
+    if (this.repositoryEventSource) {
+      this.stopRepositoryStreaming();
+    }
+
+    this.repositoryEventSource = new EventSource('/api/repositories/stream');
+
+    this.repositoryEventSource.addEventListener('connected', (event) => {
+      console.log('Connected to repository stream');
+    });
+
+    this.repositoryEventSource.addEventListener('repository_update', (event) => {
+      const update = JSON.parse(event.data);
+      console.log('Repository update received:', update);
+      this.handleRepositoryUpdate(update);
+    });
+
+    this.repositoryEventSource.addEventListener('repository_list_updated', (event) => {
+      console.log('Repository list updated');
+      this.refreshRepositories();
+    });
+
+    this.repositoryEventSource.onerror = (error) => {
+      console.error('Repository stream error:', error);
+    };
+  }
+
+  private stopRepositoryStreaming() {
+    if (this.repositoryEventSource) {
+      this.repositoryEventSource.close();
+      this.repositoryEventSource = null;
+    }
+  }
+
+  private handleRepositoryUpdate(update: any) {
+    // Handle specific repository updates
+    console.log(`Repository ${update.action}: ${update.repository}`);
+
+    // Refresh the repositories list to show the latest data
+    this.refreshRepositories();
+  }
+
+  private async refreshRepositories() {
+    // Reload repositories without changing the current page
+    const currentPage = this.currentPage;
+    await this.loadRepositories();
+    this.currentPage = currentPage;
+    await this.renderRepositories();
   }
 
   private addLogEntry(logEntry: LogEntry) {
