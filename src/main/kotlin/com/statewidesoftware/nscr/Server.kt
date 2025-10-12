@@ -577,6 +577,13 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             ctx.json(response)
         }
 
+        // List repositories with timestamps for web interface
+        app.get("/api/registry/repositories") { ctx ->
+            val repositories = blobStore.listRepositoriesWithTimestamps()
+            val response = mapOf("repositories" to repositories)
+            ctx.json(response)
+        }
+
 
         // Delete entire repository (all manifests/tags)
         app.delete("/v2/<name>") { ctx ->

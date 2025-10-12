@@ -40,6 +40,7 @@ interface Blobstore {
     fun removeManifest(image: ImageVersion)
     fun removeManifestIfExists(image: ImageVersion): Boolean
     fun listRepositories(): List<String>
+    fun listRepositoriesWithTimestamps(): List<Map<String, Any>>
     fun listTags(repository: String): List<String>
     fun deleteRepository(repository: String): Int
     fun garbageCollect(): GarbageCollectionResult

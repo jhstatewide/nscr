@@ -11,6 +11,32 @@ declare global {
 // Track ongoing deletions to prevent multiple simultaneous deletions
 const ongoingDeletions = new Set<string>();
 
+// Utility functions for timestamp formatting
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  } else if (hours > 0) {
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  } else if (minutes > 0) {
+    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  } else {
+    return 'Just now';
+  }
+}
+
+function formatAbsoluteTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString();
+}
+
 export {};
 
 interface RegistryStats {
@@ -48,23 +74,23 @@ class RegistryWebInterface {
   private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
   private reconnectTimeout: number | null = null;
   private isManualDisconnect = false;
-  
+
   // Pagination state
   private allRepositories: string[] = [];
   private currentPage = 1;
   private repositoriesPerPage = 12; // Show 12 repositories per page (3 rows of 4)
-  
+
   // Auto-refresh state
   private dashboardRefreshInterval: number | null = null;
   private dashboardRefreshIntervalMs = 3000; // Refresh every 3 seconds
-  
+
   // Log level control
   private currentLogLevel = 'INFO';
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
     this.initializeApp();
-    
+
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {
       this.cleanup();
@@ -183,7 +209,7 @@ class RegistryWebInterface {
           </div>
         </div>
       </nav>
-      
+
       <div class="container mt-4">
         <div id="dashboard-container"></div>
         <div id="repositories-container" class="mt-4"></div>
@@ -194,7 +220,7 @@ class RegistryWebInterface {
     this.loadDashboard();
     this.loadRepositories();
     this.loadLogs();
-    
+
     // Start auto-refresh for dashboard stats
     this.startDashboardAutoRefresh();
 
@@ -213,10 +239,10 @@ class RegistryWebInterface {
     try {
       const response = await fetch('/api/web/status');
       if (!response.ok) throw new Error('Failed to load status');
-      
+
       const stats: RegistryStats = await response.json();
       this.renderDashboard(stats);
-      
+
       // Update last refresh time
       this.updateLastRefreshTime();
     } catch (error) {
@@ -244,7 +270,7 @@ class RegistryWebInterface {
           </div>
         </div>
       </div>
-      
+
       <div class="row">
         <div class="col-md-3">
           <div class="card text-white bg-primary">
@@ -279,7 +305,7 @@ class RegistryWebInterface {
           </div>
         </div>
       </div>
-      
+
       <div class="row mt-4">
         <div class="col-md-6">
           <div class="card">
@@ -287,8 +313,8 @@ class RegistryWebInterface {
               <h5 class="mb-0">Storage Information</h5>
             </div>
             <div class="card-body">
-              <p><strong>Estimated Space to Free:</strong> ${this.formatBytes(stats.estimatedSpaceToFree)}</p>                                                                                                
-              ${stats.lastGcRun ? `<p><strong>Last GC Run:</strong> ${new Date(stats.lastGcRun).toLocaleString()}</p>` : ''}                                                                                  
+              <p><strong>Estimated Space to Free:</strong> ${this.formatBytes(stats.estimatedSpaceToFree)}</p>
+              ${stats.lastGcRun ? `<p><strong>Last GC Run:</strong> ${new Date(stats.lastGcRun).toLocaleString()}</p>` : ''}
             </div>
           </div>
         </div>
@@ -301,12 +327,12 @@ class RegistryWebInterface {
               </button>
             </div>
             <div class="card-body">
-              <p class="text-muted">Run garbage collection to clean up unreferenced blobs and free storage space.</p>                                                                                         
+              <p class="text-muted">Run garbage collection to clean up unreferenced blobs and free storage space.</p>
             </div>
           </div>
         </div>
       </div>
-      
+
       <div class="row mt-3">
         <div class="col-md-6">
           <div class="card border-danger">
@@ -328,7 +354,7 @@ class RegistryWebInterface {
     document.getElementById('gc-btn')?.addEventListener('click', () => {
       this.runGarbageCollection();
     });
-    
+
     // Setup shutdown button
     document.getElementById('shutdown-btn')?.addEventListener('click', () => {
       this.shutdownServer();
@@ -338,29 +364,29 @@ class RegistryWebInterface {
   private async runGarbageCollection() {
     const btn = document.getElementById('gc-btn') as HTMLButtonElement;
     const originalText = btn.innerHTML;
-    
+
     try {
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running...';
-      
+
       const response = await fetch('/api/garbage-collect', {
         method: 'POST',
       });
-      
+
       if (!response.ok) throw new Error('Garbage collection failed');
-      
+
       const result: GarbageCollectionResult = await response.json();
-      
+
       this.showAlert(`
         <strong>Garbage Collection Completed!</strong><br>
         Blobs removed: ${result.blobsRemoved}<br>
         Manifests removed: ${result.manifestsRemoved}<br>
         Space freed: ${this.formatBytes(result.spaceFreed)}
       `, 'success');
-      
+
       // Refresh dashboard
       this.loadDashboard();
-      
+
     } catch (error) {
       this.showAlert(`Failed to run garbage collection: ${error}`, 'danger');
     } finally {
@@ -376,35 +402,35 @@ class RegistryWebInterface {
       'This will stop the NSCR registry server completely.\n' +
       'This action cannot be undone.'
     );
-    
+
     if (!confirmed) {
       return;
     }
-    
+
     const btn = document.getElementById('shutdown-btn') as HTMLButtonElement;
     const originalText = btn.innerHTML;
-    
+
     try {
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Shutting down...';
-      
+
       const response = await fetch('/api/shutdown', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) throw new Error('Shutdown request failed');
-      
+
       const result = await response.json();
-      
+
       this.showAlert(`
         <strong>Server Shutdown Initiated!</strong><br>
         ${result.message}<br>
         <small class="text-muted">The server will shut down in a few seconds...</small>
       `, 'warning');
-      
+
       // Show countdown and redirect after a delay
       let countdown = 5;
       const countdownInterval = setInterval(() => {
@@ -413,14 +439,14 @@ class RegistryWebInterface {
           Redirecting in ${countdown} seconds
         `, 'warning');
         countdown--;
-        
+
         if (countdown < 0) {
           clearInterval(countdownInterval);
           // Try to redirect, but the server might already be down
           window.location.href = '/';
         }
       }, 1000);
-      
+
     } catch (error) {
       this.showAlert(`Failed to shutdown server: ${error}`, 'danger');
       btn.disabled = false;
@@ -510,9 +536,9 @@ class RegistryWebInterface {
     if (!container) return;
 
     try {
-      const response = await fetch('/v2/_catalog');
+      const response = await fetch('/api/registry/repositories');
       if (!response.ok) throw new Error('Failed to load repositories');
-      
+
       const data = await response.json();
       this.allRepositories = data.repositories || [];
       this.currentPage = 1; // Reset to first page when loading new data
@@ -555,15 +581,23 @@ class RegistryWebInterface {
     const repositoryData = await Promise.all(
       currentRepositories.map(async (repo) => {
         try {
-          const response = await fetch(`/v2/${repo}/tags/list`);
+          const response = await fetch(`/v2/${repo.name || repo}/tags/list`);
           if (response.ok) {
             const data = await response.json();
-            return { name: repo, tags: data.tags || [] };
+            return {
+              name: repo.name || repo,
+              tags: data.tags || [],
+              lastUploaded: repo.lastUploaded || null
+            };
           }
         } catch (error) {
-          console.warn(`Failed to load tags for ${repo}:`, error);
+          console.warn(`Failed to load tags for ${repo.name || repo}:`, error);
         }
-        return { name: repo, tags: [] };
+        return {
+          name: repo.name || repo,
+          tags: [],
+          lastUploaded: repo.lastUploaded || null
+        };
       })
     );
 
@@ -572,20 +606,20 @@ class RegistryWebInterface {
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">
             Repositories (${this.allRepositories.length} total)
-            ${this.allRepositories.length > this.repositoriesPerPage ? 
-              ` - Page ${this.currentPage} of ${totalPages} (${startIndex + 1}-${endIndex})` : 
+            ${this.allRepositories.length > this.repositoriesPerPage ?
+              ` - Page ${this.currentPage} of ${totalPages} (${startIndex + 1}-${endIndex})` :
               ''
             }
           </h5>
           ${this.allRepositories.length > this.repositoriesPerPage ? `
             <div class="btn-group pagination-controls" role="group">
-              <button type="button" class="btn btn-outline-secondary btn-sm" 
-                      onclick="changePage(${this.currentPage - 1})" 
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      onclick="changePage(${this.currentPage - 1})"
                       ${this.currentPage <= 1 ? 'disabled' : ''}>
                 <i class="bi bi-chevron-left"></i> Previous
               </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" 
-                      onclick="changePage(${this.currentPage + 1})" 
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      onclick="changePage(${this.currentPage + 1})"
                       ${this.currentPage >= totalPages ? 'disabled' : ''}>
                 Next <i class="bi bi-chevron-right"></i>
               </button>
@@ -603,14 +637,23 @@ class RegistryWebInterface {
                         <h6 class="card-title">${repo.name}</h6>
                         <p class="card-text">
                           <span class="badge bg-secondary">${repo.tags.length} tags</span>
+                          ${repo.lastUploaded && repo.lastUploaded > 0 ? `
+                            <br><small class="text-muted" title="${formatAbsoluteTime(repo.lastUploaded)}">
+                              <i class="bi bi-clock"></i> ${formatRelativeTime(repo.lastUploaded)}
+                            </small>
+                          ` : repo.lastUploaded === 0 ? `
+                            <br><small class="text-muted">
+                              <i class="bi bi-clock"></i> Upload time not available
+                            </small>
+                          ` : ''}
                         </p>
                         ${repo.tags.length > 0 ? `
                           <div class="mt-2">
                             <small class="text-muted">Latest tags:</small><br>
-                            ${repo.tags.slice(0, 3).map(tag => 
+                            ${repo.tags.slice(0, 3).map(tag =>
                               `<span class="badge bg-light text-dark me-1">${tag}</span>`
                             ).join('')}
-                            ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}                                                                                        
+                            ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}
             </div>
                         ` : ''}
             </div>
@@ -640,15 +683,15 @@ class RegistryWebInterface {
 
   public async deleteRepository(repositoryName: string) {
     console.log('deleteRepository called with:', repositoryName, 'at', new Date().toISOString());
-    
+
     // Prevent multiple simultaneous deletions of the same repository
     if (ongoingDeletions.has(repositoryName)) {
       console.log('Deletion already in progress for:', repositoryName);
       return;
     }
-    
+
     ongoingDeletions.add(repositoryName);
-    
+
     try {
       // Get tag count first for better confirmation
       let tagCount = 0;
@@ -671,7 +714,7 @@ class RegistryWebInterface {
         '• All associated blobs (if not referenced by other repositories)\n\n' +
         'This action cannot be undone.'
       );
-      
+
       if (!confirmed) {
         ongoingDeletions.delete(repositoryName);
         return;
@@ -691,36 +734,36 @@ class RegistryWebInterface {
             'Content-Type': 'application/json'
           }
         });
-        
+
         if (response.ok) {
           const result = await response.json();
           const deletedCount = result.manifestsDeleted || 0;
-          
+
           this.showAlert(`
             <strong>Repository Deleted Successfully!</strong><br>
             Repository: ${repositoryName}<br>
             Manifests deleted: ${deletedCount}<br>
             <small class="text-muted">Note: You may want to run garbage collection to free up disk space from unreferenced blobs.</small>
           `, 'success');
-          
+
           // Remove the repository from our local list and adjust pagination
           this.allRepositories = this.allRepositories.filter(repo => repo !== repositoryName);
-          
+
           // Adjust current page if we're now on an empty page
           const totalPages = Math.ceil(this.allRepositories.length / this.repositoriesPerPage);
           if (this.currentPage > totalPages && totalPages > 0) {
             this.currentPage = totalPages;
           }
-          
+
           // Re-render the repositories list
           this.renderRepositories();
-          
+
           // Refresh the dashboard to update stats
           this.loadDashboard();
-          
+
           // Don't reset button state after successful deletion - the repository list will be refreshed
           return;
-          
+
         } else if (response.status === 404) {
           this.showAlert(`Repository "${repositoryName}" not found`, 'warning');
           // Remove from local list and refresh in case it was already deleted
@@ -734,7 +777,7 @@ class RegistryWebInterface {
           const errorText = await response.text();
           throw new Error(`Failed to delete repository: ${response.statusText} - ${errorText}`);
         }
-        
+
       } catch (error) {
         console.error('Error deleting repository:', error);
         this.showAlert(`Failed to delete repository "${repositoryName}": ${(error as Error).message}`, 'danger');
@@ -745,7 +788,7 @@ class RegistryWebInterface {
           deleteButton.innerHTML = '<i class="bi bi-trash"></i>';
           deleteButton.classList.remove('disabled');
         }
-        
+
         // Remove from ongoing deletions
         ongoingDeletions.delete(repositoryName);
       }
@@ -770,11 +813,11 @@ class RegistryWebInterface {
       ${message}
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
-    
+
     const container = document.getElementById('dashboard-container');
     if (container) {
       container.insertBefore(alertDiv, container.firstChild);
-      
+
       // Auto-dismiss after 5 seconds
     setTimeout(() => {
         if (alertDiv.parentNode) {
@@ -797,7 +840,7 @@ class RegistryWebInterface {
 
     this.isManualDisconnect = false;
     this.eventSource = new EventSource('/api/logs/stream');
-    
+
     this.eventSource.addEventListener('connected', (event) => {
       console.log('Connected to log stream');
       this.reconnectAttempts = 0; // Reset attempts on successful connection
@@ -815,7 +858,7 @@ class RegistryWebInterface {
       console.error('Log stream error:', error);
       this.updateLogStreamStatus(false);
       this.updateLiveIndicator(false);
-      
+
       if (!this.isManualDisconnect) {
         this.scheduleReconnect();
       }
@@ -824,12 +867,12 @@ class RegistryWebInterface {
 
   private stopLogStreaming() {
     this.isManualDisconnect = true;
-    
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
-    
+
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -841,17 +884,17 @@ class RegistryWebInterface {
 
   private addLogEntry(logEntry: LogEntry) {
     this.logs.unshift(logEntry);
-    
+
     // Keep only the most recent logs
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(0, this.maxLogs);
     }
-    
+
     // Throttle log display updates to prevent excessive DOM manipulation
     if (this.logDisplayUpdateThrottle) {
       clearTimeout(this.logDisplayUpdateThrottle);
     }
-    
+
     this.logDisplayUpdateThrottle = window.setTimeout(() => {
       this.updateLogDisplay();
       this.logDisplayUpdateThrottle = null;
@@ -865,7 +908,7 @@ class RegistryWebInterface {
     const logHtml = this.logs.map(log => {
       const timestamp = new Date(log.timestamp).toLocaleTimeString();
       const levelClass = this.getLevelClass(log.level);
-      
+
       return `
         <div class="log-entry ${levelClass}">
           <span class="log-timestamp">${timestamp}</span>
@@ -877,7 +920,7 @@ class RegistryWebInterface {
     }).join('');
 
     logContainer.innerHTML = logHtml;
-    
+
     // Auto-scroll to top (newest logs)
     logContainer.scrollTop = 0;
   }
@@ -929,7 +972,7 @@ class RegistryWebInterface {
   private updateButtonStates(streaming: boolean) {
     const startBtn = document.getElementById('start-logs-btn') as HTMLButtonElement;
     const stopBtn = document.getElementById('stop-logs-btn') as HTMLButtonElement;
-    
+
     if (startBtn && stopBtn) {
       startBtn.disabled = streaming;
       stopBtn.disabled = !streaming;
@@ -942,7 +985,7 @@ class RegistryWebInterface {
     }
 
     this.reconnectAttempts++;
-    
+
     // Calculate delay: exponential backoff up to 5 minutes (300 seconds)
     let delay: number;
     if (this.reconnectAttempts <= this.maxReconnectAttempts) {
@@ -955,7 +998,7 @@ class RegistryWebInterface {
 
     const delaySeconds = Math.round(delay / 1000);
     console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delaySeconds} seconds`);
-    
+
     this.updateReconnectStatus(`Reconnecting in ${delaySeconds}s (attempt ${this.reconnectAttempts})`);
 
     this.reconnectTimeout = window.setTimeout(() => {
@@ -1041,14 +1084,14 @@ let registryInterface: RegistryWebInterface;
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   registryInterface = new RegistryWebInterface('app');
-  
+
   // Attach global functions to window object for HTML onclick handlers
   (window as any).deleteRepository = (repositoryName: string) => {
     if (registryInterface) {
       registryInterface.deleteRepository(repositoryName);
     }
   };
-  
+
   (window as any).changePage = (page: number) => {
     if (registryInterface) {
       registryInterface.changePage(page);

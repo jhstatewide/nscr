@@ -675,6 +675,30 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         }
     }
 
+    override fun listRepositoriesWithTimestamps(): List<Map<String, Any>> {
+        return jdbi.withHandle<List<Map<String, Any>>, Exception> { handle ->
+            try {
+                handle.createQuery("""
+                    SELECT name, MAX(uploadedAt) as lastUploaded
+                    FROM manifests
+                    GROUP BY name
+                    ORDER BY MAX(uploadedAt) DESC NULLS LAST, name
+                """).map { rs, _ ->
+                    mapOf(
+                        "name" to rs.getString("name"),
+                        "lastUploaded" to rs.getLong("lastUploaded")
+                    )
+                }.list()
+            } catch (e: SQLException) {
+                logger.error("SQL error in listRepositoriesWithTimestamps: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in listRepositoriesWithTimestamps: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
     override fun listTags(repository: String): List<String> {
         return jdbi.withHandle<List<String>, Exception> { handle ->
             try {
