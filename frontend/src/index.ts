@@ -173,6 +173,25 @@ class RegistryWebInterface {
 
   private showLoginForm() {
     this.container.innerHTML = `
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+          <a class="navbar-brand" href="#">NSCR Registry</a>
+          <div class="navbar-nav ms-auto">
+            <span class="navbar-text me-3">Authentication Required</span>
+            <div class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" id="systemDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-gear"></i> System
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" id="gc-btn"><i class="bi bi-trash text-warning"></i> Run Garbage Collection</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" id="shutdown-btn"><i class="bi bi-power text-danger"></i> Shutdown Server</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       <div class="container mt-5">
         <div class="row justify-content-center">
           <div class="col-md-4">
@@ -203,6 +222,14 @@ class RegistryWebInterface {
     document.getElementById('login-form')?.addEventListener('submit', (e) => {
       e.preventDefault();
       this.handleLogin();
+    });
+
+    // Setup system buttons for login form
+    document.getElementById('gc-btn')?.addEventListener('click', () => {
+      this.runGarbageCollection();
+    });
+    document.getElementById('shutdown-btn')?.addEventListener('click', () => {
+      this.shutdownServer();
     });
   }
 
@@ -241,7 +268,20 @@ class RegistryWebInterface {
           <a class="navbar-brand" href="#">NSCR Registry</a>
           <div class="navbar-nav ms-auto">
             <span class="navbar-text me-3">Registry Status</span>
-            ${this.isAuthenticated ? '<a class="nav-link" href="#" id="logout-btn">Logout</a>' : ''}
+            <div class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" id="systemDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-gear"></i> System
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" id="gc-btn"><i class="bi bi-trash text-warning"></i> Run Garbage Collection</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" id="shutdown-btn"><i class="bi bi-power text-danger"></i> Shutdown Server</a></li>
+                ${this.isAuthenticated ? `
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item" href="#" id="logout-btn"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                ` : ''}
+              </ul>
+            </div>
           </div>
         </div>
       </nav>
@@ -368,36 +408,8 @@ class RegistryWebInterface {
             </div>
           </div>
         </div>
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <h5 class="mb-0">Actions</h5>
-              <button id="gc-btn" class="btn btn-warning btn-sm">
-                <i class="bi bi-trash"></i> Run Garbage Collection
-              </button>
-            </div>
-            <div class="card-body">
-              <p class="text-muted">Run garbage collection to clean up unreferenced blobs and free storage space.</p>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <div class="row mt-3">
-        <div class="col-md-6">
-          <div class="card border-danger">
-            <div class="card-header bg-danger text-white">
-              <h5 class="mb-0"><i class="bi bi-power"></i> Server Control</h5>
-            </div>
-            <div class="card-body">
-              <p class="text-muted">Shutdown the NSCR registry server.</p>
-              <button id="shutdown-btn" class="btn btn-danger">
-                <i class="bi bi-power"></i> Shutdown Server
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
     `;
 
     // Setup garbage collection button
@@ -449,11 +461,16 @@ class RegistryWebInterface {
   }
 
   private async shutdownServer() {
-    // Show confirmation dialog
+    // Show enhanced confirmation dialog
     const confirmed = confirm(
-      'Are you sure you want to shutdown the server?\n\n' +
-      'This will stop the NSCR registry server completely.\n' +
-      'This action cannot be undone.'
+      '⚠️  WARNING: Server Shutdown ⚠️\n\n' +
+      'You are about to shutdown the NSCR registry server.\n\n' +
+      'This will:\n' +
+      '• Stop all registry services\n' +
+      '• Disconnect all active clients\n' +
+      '• Require manual restart to resume\n\n' +
+      'This action cannot be undone.\n\n' +
+      'Are you absolutely sure you want to continue?'
     );
 
     if (!confirmed) {
@@ -1045,7 +1062,7 @@ class RegistryWebInterface {
       console.log('Throughput container not found');
       return;
     }
-    
+
     // If no current throughput data, show a default state
     if (!this.currentThroughput) {
       container.innerHTML = `
@@ -1082,7 +1099,7 @@ class RegistryWebInterface {
           </div>
         </div>
       `;
-      
+
       // Add event listeners for the controls
       this.setupThroughputControls();
       return;
@@ -1260,7 +1277,7 @@ class RegistryWebInterface {
         </div>
       </div>
     `;
-    
+
     // Add event listeners for the controls
     this.setupThroughputControls();
   }
@@ -1269,12 +1286,12 @@ class RegistryWebInterface {
     // Remove existing event listeners first
     const modeSelect = document.getElementById('throughput-mode') as HTMLSelectElement;
     const viewSelect = document.getElementById('throughput-view') as HTMLSelectElement;
-    
+
     if (modeSelect) {
       // Clone the element to remove all event listeners
       const newModeSelect = modeSelect.cloneNode(true) as HTMLSelectElement;
       modeSelect.parentNode?.replaceChild(newModeSelect, modeSelect);
-      
+
       newModeSelect.addEventListener('change', (e) => {
         const target = e.target as HTMLSelectElement;
         this.throughputMode = target.value as 'live' | 'hour' | 'day';
@@ -1287,7 +1304,7 @@ class RegistryWebInterface {
       // Clone the element to remove all event listeners
       const newViewSelect = viewSelect.cloneNode(true) as HTMLSelectElement;
       viewSelect.parentNode?.replaceChild(newViewSelect, viewSelect);
-      
+
       newViewSelect.addEventListener('change', (e) => {
         const target = e.target as HTMLSelectElement;
         this.throughputView = target.value as 'overall' | 'category';
