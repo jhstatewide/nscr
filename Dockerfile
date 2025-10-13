@@ -1,5 +1,5 @@
 # Multi-stage build for NSCR (New and Shiny Container Registry)
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 # Update package lists with cache mount
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -117,7 +117,7 @@ ENTRYPOINT ["/home/app/entrypoint.sh"]
 CMD ["java", "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
 
 # Alternative target: OpenJ9 Semeru with container optimization
-FROM icr.io/appcafe/ibm-semeru-runtimes:open-17-jre-jammy as semeru
+FROM icr.io/appcafe/ibm-semeru-runtimes:open-17-jre-jammy AS semeru
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -yq curl && rm -rf /var/lib/apt/lists/*
