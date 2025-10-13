@@ -217,6 +217,57 @@ class RegistryWebInterface {
           </div>
         </div>
       </div>
+
+      <footer class="bg-light border-top mt-5 py-4">
+        <div class="container">
+          <div class="row">
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-box"></i> NSCR Registry
+              </h6>
+              <p class="small text-muted">
+                New and Shiny Container Registry - A modern, lightweight Docker registry with advanced features.
+              </p>
+            </div>
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-info-circle"></i> System Info
+              </h6>
+              <div class="small text-muted">
+                <div id="footer-uptime">Uptime: <span class="text-success">--</span></div>
+                <div id="footer-version">Version: <span class="text-info">2.0</span></div>
+                <div id="footer-clients">Active Clients: <span class="text-warning">--</span></div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-gear"></i> Quick Actions
+              </h6>
+              <div class="small">
+                <a href="#" id="footer-gc" class="text-warning text-decoration-none me-3">
+                  <i class="bi bi-trash"></i> Garbage Collection
+                </a>
+                <a href="#" id="footer-refresh" class="text-info text-decoration-none">
+                  <i class="bi bi-arrow-clockwise"></i> Refresh
+                </a>
+              </div>
+            </div>
+          </div>
+          <hr class="my-3 border-light">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <small class="text-muted">
+                © 2024 NSCR Registry. Built with <i class="bi bi-heart-fill text-danger"></i> for container developers.
+              </small>
+            </div>
+            <div class="col-md-6 text-md-end">
+              <small class="text-muted">
+                <i class="bi bi-shield-check"></i> Secure • <i class="bi bi-lightning"></i> Fast • <i class="bi bi-cpu"></i> Efficient
+              </small>
+            </div>
+          </div>
+        </div>
+      </footer>
     `;
 
     document.getElementById('login-form')?.addEventListener('submit', (e) => {
@@ -230,6 +281,17 @@ class RegistryWebInterface {
     });
     document.getElementById('shutdown-btn')?.addEventListener('click', () => {
       this.shutdownServer();
+    });
+
+    // Setup footer actions for login form
+    document.getElementById('footer-gc')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.runGarbageCollection();
+    });
+    document.getElementById('footer-refresh')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Refresh would reload the page, but since we're on login form, just reload
+      window.location.reload();
     });
   }
 
@@ -291,6 +353,57 @@ class RegistryWebInterface {
         <div id="repositories-container" class="mt-4"></div>
         <div id="logs-container" class="mt-4"></div>
       </div>
+
+      <footer class="bg-light border-top mt-5 py-4">
+        <div class="container">
+          <div class="row">
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-box"></i> NSCR Registry
+              </h6>
+              <p class="small text-muted">
+                New and Shiny Container Registry - A modern, lightweight Docker registry with advanced features.
+              </p>
+            </div>
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-info-circle"></i> System Info
+              </h6>
+              <div class="small text-muted">
+                <div id="footer-uptime">Uptime: <span class="text-success">--</span></div>
+                <div id="footer-version">Version: <span class="text-info">2.0</span></div>
+                <div id="footer-clients">Active Clients: <span class="text-warning">--</span></div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <h6 class="text-primary mb-3">
+                <i class="bi bi-gear"></i> Quick Actions
+              </h6>
+              <div class="small">
+                <a href="#" id="footer-gc" class="text-warning text-decoration-none me-3">
+                  <i class="bi bi-trash"></i> Garbage Collection
+                </a>
+                <a href="#" id="footer-refresh" class="text-info text-decoration-none">
+                  <i class="bi bi-arrow-clockwise"></i> Refresh
+                </a>
+              </div>
+            </div>
+          </div>
+          <hr class="my-3 border-light">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <small class="text-muted">
+                © 2024 NSCR Registry. Built with <i class="bi bi-heart-fill text-danger"></i> for container developers.
+              </small>
+            </div>
+            <div class="col-md-6 text-md-end">
+              <small class="text-muted">
+                <i class="bi bi-shield-check"></i> Secure • <i class="bi bi-lightning"></i> Fast • <i class="bi bi-cpu"></i> Efficient
+              </small>
+            </div>
+          </div>
+        </div>
+      </footer>
     `;
 
     this.loadDashboard();
@@ -312,6 +425,16 @@ class RegistryWebInterface {
         this.logout();
       });
     }
+
+    // Setup footer actions
+    document.getElementById('footer-gc')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.runGarbageCollection();
+    });
+    document.getElementById('footer-refresh')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.loadDashboard();
+    });
   }
 
   private async loadDashboard() {
@@ -394,9 +517,6 @@ class RegistryWebInterface {
             <!-- Throughput card will be rendered here -->
           </div>
         </div>
-      </div>
-
-      <div class="row mt-4">
         <div class="col-md-6">
           <div class="card">
             <div class="card-header">
@@ -404,7 +524,7 @@ class RegistryWebInterface {
             </div>
             <div class="card-body">
               <p><strong>Estimated Space to Free:</strong> ${this.formatBytes(stats.estimatedSpaceToFree)}</p>
-              ${stats.lastGcRun ? `<p><strong>Last GC Run:</strong> ${new Date(stats.lastGcRun).toLocaleString()}</p>` : ''}
+              ${stats.lastGcRun && stats.lastGcRun !== "2024-01-01T00:00:00Z" ? `<p><strong>Last GC Run:</strong> ${new Date(stats.lastGcRun).toLocaleString()}</p>` : ''}
             </div>
           </div>
         </div>
