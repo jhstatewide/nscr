@@ -332,7 +332,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
 
         app.get("/v2") { ctx ->
-            logger.info { "Access GET /v2" }
+            logger.info { "Registry API v2 base endpoint accessed" }
             ctx.header("Docker-Distribution-API-Version", "registry/2.0")
             ctx.result("200 OK")
         }
@@ -359,14 +359,14 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             // Extract image name from the wildcard path
             val fullPath = ctx.path()
             val image = fullPath.substringAfter("/v2/").substringBefore("/blobs/uploads")
-            logger.debug("POST /v2/$image/blobs/uploads - Starting blob upload")
+            logger.info("Starting blob upload for image: $image")
             // see if we have the query param 'digest',
             // as in /v2/test/blobs/uploads?digest=sha256:1234
             val digest = ctx.queryParam("digest")
             if (digest != null) {
-                logger.info("Got a digest: $digest")
+                logger.debug("Digest provided: $digest")
                 if (blobStore.hasBlob(Digest(digest))) {
-                    logger.info("We already have this blob!")
+                    logger.info("Blob already exists, skipping upload")
                     ctx.status(201)
                     ctx.header("Location", Config.REGISTRY_URL)
                     ctx.result("Created")
@@ -383,10 +383,10 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             // later when the blob data is actually uploaded via PATCH requests or when
             // the upload is finalized via PUT request.
             if (digest != null) {
-                logger.info("Digest $digest provided for session $sessionID - will be associated when blob data is uploaded")
+                logger.debug("Digest $digest provided for session $sessionID - will be associated when blob data is uploaded")
             }
 
-            logger.info("Telling the uploader to go to $newLocation")
+            logger.debug("Upload session created: $newLocation")
             ctx.header("Location", newLocation)
             ctx.header("Docker-Upload-UUID", sessionID.id)
             ctx.status(202)
@@ -396,9 +396,9 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // List tags for a repository (supports slashes in name using <> syntax)
         app.get("/v2/<name>/tags/list") { ctx ->
             val name = ctx.pathParam("name")
-            logger.info("Tags list request - name: $name")
+            logger.info("Listing tags for repository: $name")
             val tags = blobStore.listTags(name)
-            logger.info("Found tags for $name: $tags")
+            logger.debug("Found ${tags.size} tags for $name: $tags")
             val response = mapOf(
                 "name" to name,
                 "tags" to tags
@@ -454,11 +454,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val contentRange = ctx.header("Content-Range")
             val contentLength = ctx.header("Content-Length")?.toIntOrNull()
-            logger.debug("PATCH /v2/uploads/$sessionID/$blobNumber - Uploading blob chunk with content range: $contentRange and length: $contentLength")
+            logger.debug("Uploading blob chunk $blobNumber for session $sessionID (range: $contentRange, length: $contentLength)")
 
             try {
                 val uploadedBytes = blobStore.addBlob(sessionID, blobNumber, ctx.bodyInputStream())
-                logger.info("Successfully uploaded $uploadedBytes bytes for session $sessionID, blob $blobNumber")
+                logger.debug("Successfully uploaded $uploadedBytes bytes for session $sessionID, blob $blobNumber")
 
                 ctx.status(202)
                 // we have to give a location to upload to next...
@@ -478,12 +478,12 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val sessionID = SessionID(ctx.pathParam("sessionID"))
             val blobNumber = ctx.pathParam("blobNumber").toIntOrNull()
             val digest = Digest(ctx.queryParam("digest") ?: throw Error("No digest provided as query param!"))
-            logger.debug("PUT /v2/uploads/$sessionID/$blobNumber - Finalizing blob upload for digest: $digest")
+            logger.info("Finalizing blob upload for digest: $digest")
 
             try {
                 // 201 Created
                 blobStore.associateBlobWithSession(sessionID, digest)
-                logger.info("Successfully finalized blob upload for session $sessionID, digest $digest")
+                logger.debug("Successfully finalized blob upload for session $sessionID, digest $digest")
                 ctx.header("Location", Config.REGISTRY_URL)
                 ctx.status(201)
                 ctx.result("Created")
@@ -498,7 +498,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             val fullPath = ctx.path()
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")
             val reference = ctx.pathParam("reference")
-            logger.info("PUSH DEBUG: Processing manifest upload for $name:$reference")
+            logger.info("Processing manifest upload for $name:$reference")
 
             val contentType = ctx.header("Content-Type")
             val supportedManifestTypes = listOf(
@@ -509,28 +509,28 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 error("Mime type blooper! You must upload manifest of type: ${supportedManifestTypes.joinToString(" or ")} instead of $contentType!")
             }
             val body = ctx.body()
-            logger.debug("Uploaded manifest is: $body")
+            logger.debug("Manifest content: $body")
 
             // Extract and log blob digests referenced by this manifest
             try {
                 val blobDigests = extractBlobDigestsFromManifest(body)
-                logger.info("PUSH DEBUG: Manifest $name:$reference references ${blobDigests.size} blobs: ${blobDigests.joinToString(", ")}")
+                logger.debug("Manifest $name:$reference references ${blobDigests.size} blobs: ${blobDigests.joinToString(", ")}")
 
                 // Verify that all referenced blobs exist
                 val missingBlobs = blobDigests.filter { !blobStore.hasBlob(Digest(it)) }
                 if (missingBlobs.isNotEmpty()) {
-                    logger.warn("PUSH DEBUG: Manifest $name:$reference references missing blobs: ${missingBlobs.joinToString(", ")}")
+                    logger.warn("Manifest $name:$reference references missing blobs: ${missingBlobs.joinToString(", ")}")
                 } else {
-                    logger.info("PUSH DEBUG: All ${blobDigests.size} blobs referenced by manifest $name:$reference are present")
+                    logger.debug("All ${blobDigests.size} blobs referenced by manifest $name:$reference are present")
                 }
             } catch (e: Exception) {
-                logger.warn("PUSH DEBUG: Failed to extract blob digests from manifest $name:$reference: ${e.message}")
+                logger.warn("Failed to extract blob digests from manifest $name:$reference: ${e.message}")
             }
 
             // get digest for this manifest...
             val sha = generateSHA256(body)
             val digestString = "sha256:$sha"
-            logger.info("PUSH DEBUG: Adding manifest $name:$reference with digest $digestString")
+            logger.info("Storing manifest $name:$reference with digest $digestString")
             blobStore.addManifest(ImageVersion(name, reference), Digest(sha), body)
 
             // Broadcast repository update
@@ -636,7 +636,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Garbage collection endpoint
         app.post("/api/garbage-collect") { ctx ->
-            logger.info("Starting garbage collection...")
+            logger.info("Manual garbage collection initiated")
             val result = blobStore.garbageCollect()
             val response = mapOf(
                 "blobsRemoved" to result.blobsRemoved,
@@ -649,7 +649,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Garbage collection statistics endpoint
         app.get("/api/garbage-collect/stats") { ctx ->
-            logger.info("Getting garbage collection statistics...")
+            logger.info("Retrieving garbage collection statistics")
             val stats = blobStore.getGarbageCollectionStats()
             val response = mapOf(
                 "totalBlobs" to stats.totalBlobs,
@@ -664,7 +664,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Comprehensive registry state API for external monitoring and torture testing
         app.get("/api/registry/state") { ctx ->
-            logger.info("Getting comprehensive registry state...")
+            logger.info("Retrieving registry state")
             try {
                 val repositories = blobStore.listRepositories()
                 val gcStats = blobStore.getGarbageCollectionStats()
@@ -738,7 +738,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         // Detailed repository information API
         app.get("/api/registry/repositories/<name>") { ctx ->
             val repoName = ctx.pathParam("name")
-            logger.info("Getting detailed information for repository: $repoName")
+            logger.info("Retrieving repository details: $repoName")
 
             try {
                 val tags = blobStore.listTags(repoName)
@@ -772,7 +772,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Blob information API
         app.get("/api/registry/blobs") { ctx ->
-            logger.info("Getting blob information...")
+            logger.info("Retrieving blob inventory")
 
             try {
                 val blobList = mutableListOf<Map<String, Any>>()
@@ -819,7 +819,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Storage statistics API
         app.get("/api/registry/storage") { ctx ->
-            logger.info("Getting storage statistics...")
+            logger.info("Calculating storage statistics")
 
             try {
                 var totalBytes = 0L
@@ -895,7 +895,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Session tracking API
         app.get("/api/registry/sessions") { ctx ->
-            logger.info("Getting active session information...")
+            logger.info("Retrieving active sessions")
 
             try {
                 // Since SessionTracker doesn't track active sessions, return empty list
@@ -917,7 +917,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         // Comprehensive health check API
         app.get("/api/registry/health") { ctx ->
-            logger.info("Performing comprehensive health check...")
+            logger.info("Running health check")
 
             try {
                 val repositories = blobStore.listRepositories()
