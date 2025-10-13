@@ -768,15 +768,43 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
             try {
                 val tags = blobStore.listTags(repoName)
+
+                // Create a single blob size map for efficient lookup (only scan blobs once)
+                val blobSizeMap = mutableMapOf<String, Long>()
+                blobStore.eachBlob { blobRow ->
+                    blobRow.digest?.let { digest ->
+                        blobSizeMap[digest] = blobRow.content.size.toLong()
+                    }
+                }
+
                 val tagDetails = tags.map { tag ->
                     val imageVersion = ImageVersion(repoName, tag)
                     val hasManifest = blobStore.hasManifest(imageVersion)
                     val digest = if (hasManifest) blobStore.digestForManifest(imageVersion).digestString else null
 
+                    // Calculate image size by parsing manifest and summing blob sizes
+                    val imageSize = if (hasManifest) {
+                        try {
+                            val manifestJson = blobStore.getManifest(imageVersion)
+                            val blobDigests = extractBlobDigestsFromManifest(manifestJson)
+
+                            // Sum up the sizes of all referenced blobs using the pre-built map
+                            blobDigests.sumOf { digestStr ->
+                                blobSizeMap[digestStr] ?: 0L
+                            }
+                        } catch (e: Exception) {
+                            logger.warn("Failed to calculate size for $repoName:$tag: ${e.message}")
+                            0L
+                        }
+                    } else {
+                        0L
+                    }
+
                     mapOf(
                         "tag" to tag,
                         "hasManifest" to hasManifest,
-                        "digest" to digest
+                        "digest" to digest,
+                        "sizeBytes" to imageSize
                     )
                 }
 

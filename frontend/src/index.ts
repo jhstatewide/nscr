@@ -5,6 +5,7 @@ import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 declare global {
   interface Window {
     registryInterface?: RegistryWebInterface;
+    viewRepositoryDetails?: (repoName: string) => void;
   }
 }
 
@@ -848,6 +849,9 @@ class RegistryWebInterface {
                         ` : ''}
             </div>
                       <div class="ms-2">
+                        <button class="btn btn-outline-info btn-sm me-1" onclick="viewRepositoryDetails('${repo.name}')" title="View repository details">
+                          <i class="bi bi-info-circle"></i>
+                        </button>
                         <button class="btn btn-outline-danger btn-sm" onclick="deleteRepository('${repo.name}')" title="Delete repository">
                           <i class="bi bi-trash"></i>
                         </button>
@@ -868,6 +872,205 @@ class RegistryWebInterface {
     if (page >= 1 && page <= totalPages) {
       this.currentPage = page;
       this.renderRepositories();
+    }
+  }
+
+  public async viewRepositoryDetails(repoName: string) {
+    // Find the button that was clicked and disable it
+    const buttons = document.querySelectorAll(`button[onclick*="viewRepositoryDetails('${repoName}')"]`);
+    const clickedButton = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(`viewRepositoryDetails('${repoName}')`)) as HTMLButtonElement;
+
+    if (clickedButton) {
+      const originalContent = clickedButton.innerHTML;
+      clickedButton.disabled = true;
+      clickedButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading...';
+
+      try {
+        console.log('Loading repository details for:', repoName);
+        const response = await fetch(`/api/registry/repositories/${encodeURIComponent(repoName)}`);
+        if (!response.ok) throw new Error('Failed to load repository details');
+
+        const data = await response.json();
+        console.log('Repository data received:', data);
+        this.showRepositoryDetailsModal(data);
+      } catch (error) {
+        console.error('Error loading repository details:', error);
+        this.showAlert(`Failed to load repository details: ${error}`, 'danger');
+      } finally {
+        // Re-enable the button
+        clickedButton.disabled = false;
+        clickedButton.innerHTML = originalContent;
+      }
+    } else {
+      // Fallback if button not found
+      try {
+        console.log('Loading repository details for:', repoName);
+        const response = await fetch(`/api/registry/repositories/${encodeURIComponent(repoName)}`);
+        if (!response.ok) throw new Error('Failed to load repository details');
+
+        const data = await response.json();
+        console.log('Repository data received:', data);
+        this.showRepositoryDetailsModal(data);
+      } catch (error) {
+        console.error('Error loading repository details:', error);
+        this.showAlert(`Failed to load repository details: ${error}`, 'danger');
+      }
+    }
+  }
+
+  private showRepositoryDetailsModal(data: any) {
+    console.log('Creating modal with data:', data);
+
+    const modalHtml = `
+      <div class="modal fade" id="repositoryDetailsModal" tabindex="-1" aria-labelledby="repositoryDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="repositoryDetailsModalLabel">
+                <i class="bi bi-box"></i> ${data.name}
+              </h5>
+              <button type="button" class="btn-close" onclick="registryInterface.hideModal()" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <strong>Repository:</strong> ${data.name}
+                </div>
+                <div class="col-md-6">
+                  <strong>Tags:</strong> ${data.tagCount}
+                </div>
+              </div>
+
+              <h6>Image Tags and Sizes</h6>
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Tag</th>
+                      <th>Size</th>
+                      <th>Digest</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${data.tags.map((tag: any) => `
+                      <tr>
+                        <td><span class="badge bg-primary">${tag.tag}</span></td>
+                        <td>${this.formatBytes(tag.sizeBytes || 0)}</td>
+                        <td><code class="small">${tag.digest ? tag.digest.substring(0, 12) + '...' : 'N/A'}</code></td>
+                        <td>
+                          ${tag.hasManifest ?
+                            '<span class="badge bg-success">Available</span>' :
+                            '<span class="badge bg-warning">Missing</span>'
+                          }
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mt-3">
+                <strong>Total Repository Size:</strong>
+                <span class="text-primary">
+                  ${this.formatBytes(data.tags.reduce((sum: number, tag: any) => sum + (tag.sizeBytes || 0), 0))}
+                </span>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="registryInterface.hideModal()">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Remove existing modal if any
+    const existingModal = document.getElementById('repositoryDetailsModal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Wait a moment for the DOM to be updated, then show modal
+    setTimeout(() => {
+      const modalElement = document.getElementById('repositoryDetailsModal');
+      if (modalElement) {
+        console.log('Modal element found, showing modal');
+        try {
+          // Try different ways to access Bootstrap Modal
+          let Modal;
+          if ((window as any).bootstrap && (window as any).bootstrap.Modal) {
+            Modal = (window as any).bootstrap.Modal;
+          } else if ((window as any).Modal) {
+            Modal = (window as any).Modal;
+          } else {
+            // Fallback: try to import Bootstrap dynamically
+            console.log('Bootstrap Modal not found, using manual modal approach');
+            // Show modal using data attributes as fallback
+            modalElement.setAttribute('data-bs-show', 'true');
+            modalElement.classList.add('show');
+            modalElement.style.display = 'block';
+            modalElement.setAttribute('aria-modal', 'true');
+            modalElement.setAttribute('role', 'dialog');
+
+            console.log('Modal element classes:', modalElement.className);
+            console.log('Modal element style:', modalElement.style.cssText);
+
+            // Add backdrop
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show';
+            backdrop.id = 'modalBackdrop';
+            document.body.appendChild(backdrop);
+
+            // Add click handler to close modal
+            backdrop.addEventListener('click', () => {
+              this.hideModal();
+            });
+
+            // Add escape key handler
+            const escapeHandler = (e: KeyboardEvent) => {
+              if (e.key === 'Escape') {
+                this.hideModal();
+                document.removeEventListener('keydown', escapeHandler);
+              }
+            };
+            document.addEventListener('keydown', escapeHandler);
+
+            return;
+          }
+
+          const modal = new Modal(modalElement);
+          modal.show();
+        } catch (error) {
+          console.error('Error creating Bootstrap modal:', error);
+          // Fallback to manual modal display
+          modalElement.classList.add('show');
+          modalElement.style.display = 'block';
+          modalElement.setAttribute('aria-modal', 'true');
+          modalElement.setAttribute('role', 'dialog');
+        }
+      } else {
+        console.error('Modal element not found after insertion');
+      }
+    }, 100);
+  }
+
+  private hideModal() {
+    const modalElement = document.getElementById('repositoryDetailsModal');
+    const backdrop = document.getElementById('modalBackdrop');
+
+    if (modalElement) {
+      modalElement.classList.remove('show');
+      modalElement.style.display = 'none';
+      modalElement.removeAttribute('aria-modal');
+      modalElement.removeAttribute('role');
+    }
+
+    if (backdrop) {
+      backdrop.remove();
     }
   }
 
@@ -1649,4 +1852,13 @@ document.addEventListener('DOMContentLoaded', () => {
       registryInterface.changePage(page);
     }
   };
+
+  (window as any).viewRepositoryDetails = (repoName: string) => {
+    if (registryInterface) {
+      registryInterface.viewRepositoryDetails(repoName);
+    }
+  };
+
+  // Make hideModal globally accessible
+  (window as any).registryInterface = registryInterface;
 });
