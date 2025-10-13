@@ -53,6 +53,155 @@ body {
     100% { opacity: 1; }
 }
 
+/* Throughput monitoring styles */
+.throughput-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.throughput-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.throughput-card.throughput-active::before {
+    opacity: 1;
+}
+
+.throughput-card.throughput-idle {
+    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+}
+
+.throughput-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.throughput-header h6 {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.throughput-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.throughput-controls .form-select {
+    background-color: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    font-size: 0.8rem;
+    min-width: 80px;
+}
+
+.throughput-controls .form-select:focus {
+    background-color: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.25);
+}
+
+.throughput-controls .form-select option {
+    background-color: #495057;
+    color: white;
+}
+
+.throughput-content {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.throughput-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+}
+
+.throughput-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.throughput-value {
+    font-weight: 600;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+}
+
+.throughput-total {
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+    font-weight: 700;
+}
+
+.throughput-average {
+    font-size: 0.7rem;
+    opacity: 0.8;
+    margin-left: 0.5rem;
+}
+
+.throughput-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.3);
+    margin: 0.5rem 0;
+}
+
+/* Active throughput animation */
+.throughput-card.throughput-active {
+    animation: throughputPulse 2s infinite;
+}
+
+@keyframes throughputPulse {
+    0% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(102, 126, 234, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .throughput-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .throughput-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .throughput-controls .form-select {
+        flex: 1;
+        margin: 0 0.25rem;
+    }
+    
+    .throughput-metric {
+        font-size: 0.85rem;
+    }
+    
+    .throughput-value {
+        font-size: 0.9rem;
+    }
+}
+
 .log-viewer {
     height: 400px;
     overflow-y: auto;

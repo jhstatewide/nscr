@@ -63,11 +63,41 @@ interface GarbageCollectionResult {
   manifestsRemoved: number;
 }
 
+interface ThroughputData {
+  timestamp: number;
+  categories: {
+    blobUpload: { current: number; average: number; totalBytes: number };
+    blobDownload: { current: number; average: number; totalBytes: number };
+    manifestUpload: { current: number; average: number; totalBytes: number };
+    manifestDownload: { current: number; average: number; totalBytes: number };
+  };
+  overall: {
+    read: { current: number; average: number; totalBytes: number };
+    write: { current: number; average: number; totalBytes: number };
+    total: { current: number; average: number; totalBytes: number };
+  };
+}
+
+interface TimeSeriesPoint {
+  timestamp: number;
+  readBytes: number;
+  writeBytes: number;
+  peakReadRate: number;
+  peakWriteRate: number;
+  operationCount: number;
+}
+
+interface HistoricalStats {
+  timeRange: 'minute' | 'hour' | 'day';
+  dataPoints: TimeSeriesPoint[];
+}
+
 class RegistryWebInterface {
   private container: HTMLElement;
   private isAuthenticated = false;
   private eventSource: EventSource | null = null;
   private repositoryEventSource: EventSource | null = null;
+  private throughputEventSource: EventSource | null = null;
   private logs: LogEntry[] = [];
   private maxLogs = 500; // Reduced from 1000 to prevent memory issues
   private logDisplayUpdateThrottle: number | null = null;
@@ -75,6 +105,11 @@ class RegistryWebInterface {
   private maxReconnectAttempts = 10; // After 10 attempts, use 5-minute intervals
   private reconnectTimeout: number | null = null;
   private isManualDisconnect = false;
+
+  // Throughput tracking
+  private currentThroughput: ThroughputData | null = null;
+  private throughputMode: 'live' | 'hour' | 'day' = 'live';
+  private throughputView: 'overall' | 'category' = 'overall';
 
   // Pagination state
   private allRepositories: string[] = [];
@@ -228,6 +263,9 @@ class RegistryWebInterface {
     // Start repository streaming for live updates
     this.startRepositoryStreaming();
 
+    // Start throughput streaming for live monitoring
+    this.startThroughputStreaming();
+
     // Setup logout if authenticated
     if (this.isAuthenticated) {
       document.getElementById('logout-btn')?.addEventListener('click', () => {
@@ -312,6 +350,14 @@ class RegistryWebInterface {
 
       <div class="row mt-4">
         <div class="col-md-6">
+          <div id="throughput-container">
+            <!-- Throughput card will be rendered here -->
+          </div>
+        </div>
+      </div>
+
+      <div class="row mt-4">
+        <div class="col-md-6">
           <div class="card">
             <div class="card-header">
               <h5 class="mb-0">Storage Information</h5>
@@ -363,6 +409,9 @@ class RegistryWebInterface {
     document.getElementById('shutdown-btn')?.addEventListener('click', () => {
       this.shutdownServer();
     });
+
+    // Initialize throughput display
+    this.updateThroughputDisplay();
   }
 
   private async runGarbageCollection() {
@@ -835,6 +884,7 @@ class RegistryWebInterface {
     this.isAuthenticated = false;
     this.stopLogStreaming();
     this.stopRepositoryStreaming();
+    this.stopThroughputStreaming();
     this.initializeApp();
   }
 
@@ -935,6 +985,316 @@ class RegistryWebInterface {
     await this.loadRepositories();
     this.currentPage = currentPage;
     await this.renderRepositories();
+  }
+
+  private startThroughputStreaming() {
+    if (this.throughputEventSource) {
+      this.stopThroughputStreaming();
+    }
+
+    this.throughputEventSource = new EventSource('/api/throughput/stream');
+
+    this.throughputEventSource.addEventListener('connected', (event) => {
+      console.log('Connected to throughput stream');
+    });
+
+    // Set a timeout to show default state if no data is received
+    setTimeout(() => {
+      if (!this.currentThroughput) {
+        console.log('No throughput data received, showing default state');
+        this.updateThroughputDisplay();
+      }
+    }, 2000);
+
+    this.throughputEventSource.addEventListener('throughput_update', (event) => {
+      const throughputData: ThroughputData = JSON.parse(event.data);
+      this.currentThroughput = throughputData;
+      console.log('Throughput data received:', throughputData);
+      this.updateThroughputDisplay();
+    });
+
+    this.throughputEventSource.addEventListener('heartbeat', (event) => {
+      const heartbeatData = JSON.parse(event.data);
+      console.log('Registry heartbeat - idle state:', heartbeatData.message);
+      // Show idle state in the UI
+      this.showIdleState();
+    });
+
+    this.throughputEventSource.onerror = (error) => {
+      console.error('Throughput stream error:', error);
+      // Try to reconnect after a delay
+      setTimeout(() => {
+        if (this.throughputEventSource?.readyState === EventSource.CLOSED) {
+          console.log('Attempting to reconnect throughput stream...');
+          this.startThroughputStreaming();
+        }
+      }, 5000);
+    };
+  }
+
+  private stopThroughputStreaming() {
+    if (this.throughputEventSource) {
+      this.throughputEventSource.close();
+      this.throughputEventSource = null;
+    }
+  }
+
+  private updateThroughputDisplay() {
+    const container = document.getElementById('throughput-container');
+    if (!container) {
+      console.log('Throughput container not found');
+      return;
+    }
+    
+    // If no current throughput data, show a default state
+    if (!this.currentThroughput) {
+      container.innerHTML = `
+        <div class="throughput-card throughput-idle">
+          <div class="throughput-header">
+            <h6>Throughput</h6>
+            <div class="throughput-controls">
+              <select id="throughput-mode" class="form-select form-select-sm">
+                <option value="live" ${this.throughputMode === 'live' ? 'selected' : ''}>Live</option>
+                <option value="hour" ${this.throughputMode === 'hour' ? 'selected' : ''}>Hour</option>
+                <option value="day" ${this.throughputMode === 'day' ? 'selected' : ''}>Day</option>
+              </select>
+              <select id="throughput-view" class="form-select form-select-sm">
+                <option value="overall" ${this.throughputView === 'overall' ? 'selected' : ''}>Overall</option>
+                <option value="category" ${this.throughputView === 'category' ? 'selected' : ''}>Category</option>
+              </select>
+            </div>
+          </div>
+          <div class="throughput-content">
+            <div class="throughput-metric">
+              <span class="throughput-label">● Read:</span>
+              <span class="throughput-value">0.0 B/s</span>
+            </div>
+            <div class="throughput-metric">
+              <span class="throughput-label">● Write:</span>
+              <span class="throughput-value">0.0 B/s</span>
+            </div>
+            <div class="throughput-divider"></div>
+            <div class="throughput-metric throughput-total">
+              <span class="throughput-label">Total:</span>
+              <span class="throughput-value">0.0 B/s</span>
+              <small class="throughput-average">(5s avg)</small>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Add event listeners for the controls
+      this.setupThroughputControls();
+      return;
+    }
+
+    const data = this.currentThroughput;
+    const formatRate = (bytesPerSecond: number): string => {
+      if (bytesPerSecond >= 1024 * 1024) {
+        return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+      } else if (bytesPerSecond >= 1024) {
+        return `${(bytesPerSecond / 1024).toFixed(1)} kB/s`;
+      } else {
+        return `${bytesPerSecond.toFixed(1)} B/s`;
+      }
+    };
+
+    const isActive = data.overall.total.current > 0;
+    const activeClass = isActive ? 'throughput-active' : 'throughput-idle';
+
+    if (this.throughputView === 'overall') {
+      container.innerHTML = `
+        <div class="throughput-card ${activeClass}">
+          <div class="throughput-header">
+            <h6>Network Throughput</h6>
+            <div class="throughput-controls">
+              <select id="throughput-mode" class="form-select form-select-sm">
+                <option value="live" ${this.throughputMode === 'live' ? 'selected' : ''}>Live</option>
+                <option value="hour" ${this.throughputMode === 'hour' ? 'selected' : ''}>Hour</option>
+                <option value="day" ${this.throughputMode === 'day' ? 'selected' : ''}>Day</option>
+              </select>
+              <select id="throughput-view" class="form-select form-select-sm">
+                <option value="overall" ${this.throughputView === 'overall' ? 'selected' : ''}>Overall</option>
+                <option value="category" ${this.throughputView === 'category' ? 'selected' : ''}>Category</option>
+              </select>
+            </div>
+          </div>
+          <div class="throughput-content">
+            <div class="throughput-metric">
+              <span class="throughput-label">● Read:</span>
+              <span class="throughput-value">${formatRate(data.overall.read.current)}</span>
+            </div>
+            <div class="throughput-metric">
+              <span class="throughput-label">● Write:</span>
+              <span class="throughput-value">${formatRate(data.overall.write.current)}</span>
+            </div>
+            <div class="throughput-divider"></div>
+            <div class="throughput-metric throughput-total">
+              <span class="throughput-label">Total:</span>
+              <span class="throughput-value">${formatRate(data.overall.total.current)}</span>
+              <small class="throughput-average">(5s avg)</small>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="throughput-card ${activeClass}">
+          <div class="throughput-header">
+            <h6>Network Throughput</h6>
+            <div class="throughput-controls">
+              <select id="throughput-mode" class="form-select form-select-sm">
+                <option value="live" ${this.throughputMode === 'live' ? 'selected' : ''}>Live</option>
+                <option value="hour" ${this.throughputMode === 'hour' ? 'selected' : ''}>Hour</option>
+                <option value="day" ${this.throughputMode === 'day' ? 'selected' : ''}>Day</option>
+              </select>
+              <select id="throughput-view" class="form-select form-select-sm">
+                <option value="overall" ${this.throughputView === 'overall' ? 'selected' : ''}>Overall</option>
+                <option value="category" ${this.throughputView === 'category' ? 'selected' : ''}>Category</option>
+              </select>
+            </div>
+          </div>
+          <div class="throughput-content">
+            <div class="throughput-metric">
+              <span class="throughput-label">● Blob Upload:</span>
+              <span class="throughput-value">${formatRate(data.categories.blobUpload.current)}</span>
+            </div>
+            <div class="throughput-metric">
+              <span class="throughput-label">● Blob Download:</span>
+              <span class="throughput-value">${formatRate(data.categories.blobDownload.current)}</span>
+            </div>
+            <div class="throughput-metric">
+              <span class="throughput-label">● Manifest Upload:</span>
+              <span class="throughput-value">${formatRate(data.categories.manifestUpload.current)}</span>
+            </div>
+            <div class="throughput-metric">
+              <span class="throughput-label">● Manifest Download:</span>
+              <span class="throughput-value">${formatRate(data.categories.manifestDownload.current)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Add event listeners for the controls
+    this.setupThroughputControls();
+  }
+
+  private async loadHistoricalStats() {
+    if (this.throughputMode === 'live') {
+      console.log('Live mode - using SSE data');
+      return; // Live data comes from SSE
+    }
+
+    console.log('Loading historical stats for mode:', this.throughputMode);
+    try {
+      const endpoint = this.throughputMode === 'hour' ? '/api/throughput/history/hours' : '/api/throughput/history/days';
+      console.log('Fetching from endpoint:', endpoint);
+      const response = await fetch(endpoint);
+      if (!response.ok) throw new Error('Failed to load historical stats');
+
+      const data: HistoricalStats = await response.json();
+      console.log('Historical stats loaded:', data);
+      // For now, just show the latest data point
+      if (data.dataPoints.length > 0) {
+        const latest = data.dataPoints[data.dataPoints.length - 1];
+        // Convert to ThroughputData format for display
+        this.currentThroughput = {
+          timestamp: latest.timestamp,
+          categories: {
+            blobUpload: { current: latest.writeBytes / 60, average: latest.writeBytes / 60, totalBytes: latest.writeBytes },
+            blobDownload: { current: latest.readBytes / 60, average: latest.readBytes / 60, totalBytes: latest.readBytes },
+            manifestUpload: { current: 0, average: 0, totalBytes: 0 },
+            manifestDownload: { current: 0, average: 0, totalBytes: 0 }
+          },
+          overall: {
+            read: { current: latest.readBytes / 60, average: latest.readBytes / 60, totalBytes: latest.readBytes },
+            write: { current: latest.writeBytes / 60, average: latest.writeBytes / 60, totalBytes: latest.writeBytes },
+            total: { current: (latest.readBytes + latest.writeBytes) / 60, average: (latest.readBytes + latest.writeBytes) / 60, totalBytes: latest.readBytes + latest.writeBytes }
+          }
+        };
+        this.updateThroughputDisplay();
+      } else {
+        console.log('No historical data points available');
+      }
+    } catch (error) {
+      console.error('Failed to load historical throughput stats:', error);
+    }
+  }
+
+  private showIdleState() {
+    const container = document.getElementById('throughput-container');
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="throughput-card throughput-idle">
+        <div class="throughput-header">
+          <h6>Throughput</h6>
+          <div class="throughput-controls">
+            <select id="throughput-mode" class="form-select form-select-sm">
+              <option value="live" ${this.throughputMode === 'live' ? 'selected' : ''}>Live</option>
+              <option value="hour" ${this.throughputMode === 'hour' ? 'selected' : ''}>Hour</option>
+              <option value="day" ${this.throughputMode === 'day' ? 'selected' : ''}>Day</option>
+            </select>
+            <select id="throughput-view" class="form-select form-select-sm">
+              <option value="overall" ${this.throughputView === 'overall' ? 'selected' : ''}>Overall</option>
+              <option value="category" ${this.throughputView === 'category' ? 'selected' : ''}>Category</option>
+            </select>
+          </div>
+        </div>
+        <div class="throughput-content">
+          <div class="throughput-metric">
+            <span class="throughput-label">● Read:</span>
+            <span class="throughput-value">0.0 B/s</span>
+          </div>
+          <div class="throughput-metric">
+            <span class="throughput-label">● Write:</span>
+            <span class="throughput-value">0.0 B/s</span>
+          </div>
+          <div class="throughput-divider"></div>
+          <div class="throughput-metric throughput-total">
+            <span class="throughput-label">Total:</span>
+            <span class="throughput-value">0.0 B/s</span>
+            <small class="throughput-average">(idle)</small>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners for the controls
+    this.setupThroughputControls();
+  }
+
+  private setupThroughputControls() {
+    // Remove existing event listeners first
+    const modeSelect = document.getElementById('throughput-mode') as HTMLSelectElement;
+    const viewSelect = document.getElementById('throughput-view') as HTMLSelectElement;
+    
+    if (modeSelect) {
+      // Clone the element to remove all event listeners
+      const newModeSelect = modeSelect.cloneNode(true) as HTMLSelectElement;
+      modeSelect.parentNode?.replaceChild(newModeSelect, modeSelect);
+      
+      newModeSelect.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        this.throughputMode = target.value as 'live' | 'hour' | 'day';
+        console.log('Throughput mode changed to:', this.throughputMode);
+        this.loadHistoricalStats();
+      });
+    }
+
+    if (viewSelect) {
+      // Clone the element to remove all event listeners
+      const newViewSelect = viewSelect.cloneNode(true) as HTMLSelectElement;
+      viewSelect.parentNode?.replaceChild(newViewSelect, viewSelect);
+      
+      newViewSelect.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        this.throughputView = target.value as 'overall' | 'category';
+        console.log('Throughput view changed to:', this.throughputView);
+        this.updateThroughputDisplay();
+      });
+    }
   }
 
   private addLogEntry(logEntry: LogEntry) {

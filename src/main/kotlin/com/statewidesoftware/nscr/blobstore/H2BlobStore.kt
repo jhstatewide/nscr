@@ -2,6 +2,9 @@ package com.statewidesoftware.nscr.blobstore
 
 import com.statewidesoftware.nscr.SessionID
 import com.statewidesoftware.nscr.Config
+import com.statewidesoftware.nscr.ThroughputTracker
+import com.statewidesoftware.nscr.ThroughputCategory
+import com.statewidesoftware.nscr.CountingInputStream
 import org.h2.jdbcx.JdbcDataSource
 import org.jdbi.v3.core.Handle
 import org.jdbi.v3.core.Jdbi
@@ -178,7 +181,9 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         // so we need to copy it to a temp file
         val tempFile = File.createTempFile("com/statewidesoftware/nscr/blobstore", "blob")
         try {
-            bodyAsInputStream.use {
+            // Wrap input stream with throughput tracking
+            val countingInputStream = CountingInputStream(bodyAsInputStream, ThroughputTracker.getInstance(), ThroughputCategory.BLOB_UPLOAD)
+            countingInputStream.use {
                 it.copyTo(tempFile.outputStream())
                 logger.debug("Uploaded blob to temp file: ${tempFile.absolutePath}")
             }
@@ -582,7 +587,10 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         rs.getBinaryStream("content")
                     }.firstOrNull()
                     ?: throw NoSuchElementException("Blob not found for digest ${imageVersion.tag}")
-                handler(stream, handle)
+                
+                // Wrap stream with throughput tracking
+                val countingStream = CountingInputStream(stream, ThroughputTracker.getInstance(), ThroughputCategory.BLOB_DOWNLOAD)
+                handler(countingStream, handle)
             } catch (e: SQLException) {
                 logger.error("SQL error in getBlob for ${imageVersion.tag}: ${e.message}", e)
                 throw e

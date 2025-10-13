@@ -235,6 +235,23 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
+        // SSE endpoint for throughput updates
+        app.sse("/api/throughput/stream") { client ->
+            try {
+                SseThroughputBroadcaster.addClient(client)
+                client.sendEvent("connected", "Throughput stream started")
+
+                // Keep the connection alive
+                try {
+                    Thread.sleep(Long.MAX_VALUE) // Sleep indefinitely
+                } catch (e: InterruptedException) {
+                    // Connection closed
+                }
+            } catch (e: Exception) {
+                logger.error { "Error in throughput SSE connection: ${e.message}" }
+            }
+        }
+
         // Shutdown endpoint (only enabled if configured)
         if (Config.SHUTDOWN_ENDPOINT_ENABLED) {
             app.post("/api/shutdown") { ctx ->
@@ -280,6 +297,10 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             if (blobStore is H2BlobStore) {
                 blobStore.cleanup()
             }
+
+            // Clean up throughput tracking
+            ThroughputTracker.getInstance().shutdown()
+            SseThroughputBroadcaster.shutdown()
 
             logger.info("RegistryServerApp stopped successfully")
         } catch (e: Exception) {
@@ -979,6 +1000,51 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                     "timestamp" to System.currentTimeMillis()
                 ))
             }
+        }
+
+        // Throughput monitoring endpoints
+        app.get("/api/throughput/history/minutes") { ctx ->
+            val minutes = ctx.queryParam("count")?.toIntOrNull() ?: 60
+            val stats = ThroughputTracker.getInstance().getMinuteStats(minutes)
+            ctx.json(mapOf(
+                "timeRange" to "minute",
+                "dataPoints" to stats
+            ))
+        }
+
+        app.get("/api/throughput/history/hours") { ctx ->
+            val hours = ctx.queryParam("count")?.toIntOrNull() ?: 24
+            val stats = ThroughputTracker.getInstance().getHourStats(hours)
+            ctx.json(mapOf(
+                "timeRange" to "hour",
+                "dataPoints" to stats
+            ))
+        }
+
+        app.get("/api/throughput/history/days") { ctx ->
+            val days = ctx.queryParam("count")?.toIntOrNull() ?: 7
+            val stats = ThroughputTracker.getInstance().getDayStats(days)
+            ctx.json(mapOf(
+                "timeRange" to "day",
+                "dataPoints" to stats
+            ))
+        }
+
+        app.get("/api/throughput/peak") { ctx ->
+            val range = ctx.queryParam("range") ?: "hour"
+            val timeRange = when (range.lowercase()) {
+                "minute" -> TimeRange.MINUTE
+                "hour" -> TimeRange.HOUR
+                "day" -> TimeRange.DAY
+                else -> TimeRange.HOUR
+            }
+            val peak = ThroughputTracker.getInstance().getPeakThroughput(timeRange)
+            ctx.json(peak)
+        }
+
+        app.get("/api/throughput/current") { ctx ->
+            val current = ThroughputTracker.getInstance().getCurrentThroughput()
+            ctx.json(current)
         }
 
         // Web interface endpoints
