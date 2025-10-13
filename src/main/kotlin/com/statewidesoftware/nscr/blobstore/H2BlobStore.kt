@@ -221,7 +221,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 val deletedRows = handle.createUpdate("DELETE FROM blobs WHERE digest = :digest")
                     .bind("digest", digest.digestString)
                     .execute()
-                logger.info("Garbage collected blob: ${digest.digestString}")
+                logger.debug("Garbage collected blob: ${digest.digestString}")
                 handle.commit()
             } catch (e: SQLException) {
                 logger.error("SQL error in removeBlob for ${digest.digestString}: ${e.message}", e)
@@ -468,7 +468,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("uploadedAt", currentTime)
                     .execute()
 
-                logger.info("Stored manifest for $image with digest: sha256:${digest.digestString}")
+                logger.debug("Stored manifest for $image with digest: sha256:${digest.digestString}")
                 handle.commit()
             } catch (e: SQLException) {
                 logger.error("SQL error in addManifest for $image: ${e.message}", e)
@@ -617,7 +617,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .bind("name", image.name)
                     .bind("tag", image.tag)
                     .execute()
-                logger.info("Removed manifest for $image")
+                logger.debug("Removed manifest for $image")
                 handle.commit()
             } catch (e: SQLException) {
                 logger.error("SQL error in removeManifest for $image: ${e.message}", e)
@@ -638,7 +638,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                     .execute()
 
                 val wasDeleted = deletedRows > 0
-                logger.info("Attempted to remove manifest for $image (existed: $wasDeleted)")
+                logger.debug("Attempted to remove manifest for $image (existed: $wasDeleted)")
                 wasDeleted
             } catch (e: SQLException) {
                 logger.error("SQL error in removeManifestIfExists for $image: ${e.message}", e)
@@ -989,7 +989,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                 if (deletedUnreferencedBlobs > 0) {
                     blobsRemoved += deletedUnreferencedBlobs
                     spaceFreed += estimatedSpaceToFree
-                    logger.info("Successfully removed $deletedUnreferencedBlobs unreferenced blobs, freed $estimatedSpaceToFree bytes")
+                    logger.debug("Successfully removed $deletedUnreferencedBlobs unreferenced blobs, freed $estimatedSpaceToFree bytes")
                 }
 
                 // Step 4: Remove truly orphaned manifests (manifests that reference blobs that never existed)
