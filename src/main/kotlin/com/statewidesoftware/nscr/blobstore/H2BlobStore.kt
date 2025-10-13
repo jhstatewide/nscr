@@ -578,6 +578,134 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
         }
     }
 
+    /**
+     * Efficiently get blob sizes without loading content into memory.
+     * This method only queries the size column instead of loading the entire blob content.
+     */
+    @Throws(Exception::class)
+    override fun eachBlobSize(function: (String, Long) -> Unit) {
+        jdbi.useHandle<Exception> { handle ->
+            try {
+                handle.createQuery("""
+                    SELECT digest,
+                           CASE
+                               WHEN size IS NULL OR size = 0 THEN OCTET_LENGTH(content)
+                               ELSE size
+                           END as actualSize
+                    FROM BLOBS
+                    WHERE digest IS NOT NULL
+                """)
+                    .map { rs, _ ->
+                        val digest = rs.getString("digest")
+                        val size = rs.getLong("actualSize")
+                        digest to size
+                    }.forEach { (digest, size) ->
+                        function(digest, size)
+                    }
+            } catch (e: SQLException) {
+                logger.error("SQL error in eachBlobSize: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in eachBlobSize: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Efficiently get blob metadata without loading content into memory.
+     * This method queries all columns except the content blob to avoid memory issues.
+     */
+    @Throws(Exception::class)
+    override fun eachBlobMetadata(function: (String, String, Int?, Long) -> Unit) {
+        jdbi.useHandle<Exception> { handle ->
+            try {
+                handle.createQuery("""
+                    SELECT sessionID, blobNumber, digest,
+                           CASE
+                               WHEN size IS NULL OR size = 0 THEN OCTET_LENGTH(content)
+                               ELSE size
+                           END as actualSize
+                    FROM BLOBS
+                """)
+                    .map { rs, _ ->
+                        val sessionID = rs.getString("sessionID")
+                        val blobNumber = rs.getObject("blobNumber") as? Int
+                        val digest = rs.getString("digest")
+                        val size = rs.getLong("actualSize")
+                        sessionID to (blobNumber to (digest to size))
+                    }.forEach { (sessionID, blobNumberDigestSize) ->
+                        val (blobNumber, digestSize) = blobNumberDigestSize
+                        val (digest, size) = digestSize
+                        function(sessionID, digest ?: "unknown", blobNumber, size)
+                    }
+            } catch (e: SQLException) {
+                logger.error("SQL error in eachBlobMetadata: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in eachBlobMetadata: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Fix missing or incorrect size values in the database by recalculating them from blob content.
+     * This is useful for existing databases where the size column might be NULL or incorrect.
+     */
+    @Throws(Exception::class)
+    override fun fixBlobSizes(): Int {
+        return jdbi.withHandle<Int, Exception> { handle ->
+            try {
+                logger.info("Starting blob size repair process...")
+
+                // Find blobs with NULL or 0 size
+                val blobsToFix = handle.createQuery("""
+                    SELECT digest, OCTET_LENGTH(content) as actualSize
+                    FROM blobs
+                    WHERE digest IS NOT NULL
+                    AND (size IS NULL OR size = 0)
+                """).map { rs, _ ->
+                    val digest = rs.getString("digest")
+                    val actualSize = rs.getLong("actualSize")
+                    digest to actualSize
+                }.list()
+
+                logger.info("Found ${blobsToFix.size} blobs with missing or incorrect size values")
+
+                var fixedCount = 0
+                for ((digest, actualSize) in blobsToFix) {
+                    try {
+                        val updated = handle.createUpdate("""
+                            UPDATE blobs
+                            SET size = :actualSize
+                            WHERE digest = :digest
+                        """)
+                            .bind("actualSize", actualSize)
+                            .bind("digest", digest)
+                            .execute()
+
+                        if (updated > 0) {
+                            fixedCount++
+                            logger.debug("Fixed size for blob $digest: $actualSize bytes")
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("Failed to fix size for blob $digest: ${e.message}")
+                    }
+                }
+
+                logger.info("Blob size repair completed: $fixedCount blobs fixed")
+                fixedCount
+            } catch (e: SQLException) {
+                logger.error("SQL error in fixBlobSizes: ${e.message}", e)
+                throw e
+            } catch (e: Exception) {
+                logger.error("Error in fixBlobSizes: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
     override fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit) {
         jdbi.useHandle<Exception> { handle ->
             try {
@@ -587,7 +715,7 @@ class H2BlobStore(private val dataDirectory: Path = Config.DATABASE_PATH): Blobs
                         rs.getBinaryStream("content")
                     }.firstOrNull()
                     ?: throw NoSuchElementException("Blob not found for digest ${imageVersion.tag}")
-                
+
                 // Wrap stream with throughput tracking
                 val countingStream = CountingInputStream(stream, ThroughputTracker.getInstance(), ThroughputCategory.BLOB_DOWNLOAD)
                 handler(countingStream, handle)

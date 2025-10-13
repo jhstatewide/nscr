@@ -570,8 +570,8 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
         app.get("/api/blobs") { ctx ->
             val blobList = StringBuilder()
-            blobStore.eachBlob { blobRow ->
-                blobList.append(blobRow.digest)
+            blobStore.eachBlobSize { digest, _ ->
+                blobList.append(digest)
                 blobList.append("\n")
             }
             ctx.result(blobList.toString())
@@ -660,6 +660,22 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
             }
         }
 
+        // Fix blob sizes endpoint
+        app.post("/api/fix-blob-sizes") { ctx ->
+            logger.info("Manual blob size repair initiated")
+            try {
+                val fixedCount = blobStore.fixBlobSizes()
+                ctx.json(mapOf(
+                    "message" to "Blob size repair completed",
+                    "blobsFixed" to fixedCount
+                ))
+            } catch (e: Exception) {
+                logger.error("Error fixing blob sizes: ${e.message}", e)
+                ctx.status(500)
+                ctx.json(mapOf("error" to "Failed to fix blob sizes", "message" to e.message))
+            }
+        }
+
         // Garbage collection endpoint
         app.post("/api/garbage-collect") { ctx ->
             logger.info("Manual garbage collection initiated")
@@ -700,13 +716,11 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val uniqueBlobs = mutableSetOf<String>()
                 var uniqueBytes = 0L
 
-                blobStore.eachBlob { blobRow ->
-                    val blobSize = blobRow.content.size.toLong()
-                    totalBytes += blobSize
+                blobStore.eachBlobSize { digest, size ->
+                    totalBytes += size
 
-                    val digest = blobRow.digest
                     if (digest != null && uniqueBlobs.add(digest)) {
-                        uniqueBytes += blobSize
+                        uniqueBytes += size
                     }
                 }
 
@@ -770,11 +784,10 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val tags = blobStore.listTags(repoName)
 
                 // Create a single blob size map for efficient lookup (only scan blobs once)
+                // Use the new streaming method to avoid loading blob content into memory
                 val blobSizeMap = mutableMapOf<String, Long>()
-                blobStore.eachBlob { blobRow ->
-                    blobRow.digest?.let { digest ->
-                        blobSizeMap[digest] = blobRow.content.size.toLong()
-                    }
+                blobStore.eachBlobSize { digest, size ->
+                    blobSizeMap[digest] = size
                 }
 
                 val tagDetails = tags.map { tag ->
@@ -834,21 +847,19 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
                 val uniqueBlobs = mutableSetOf<String>()
                 var uniqueBytes = 0L
 
-                blobStore.eachBlob { blobRow ->
-                    val blobSize = blobRow.content.size.toLong()
-                    totalBytes += blobSize
+                blobStore.eachBlobMetadata { sessionID, digest, blobNumber, size ->
+                    totalBytes += size
 
                     // Track unique blobs by digest
-                    val digest = blobRow.digest
-                    if (digest != null && uniqueBlobs.add(digest)) {
-                        uniqueBytes += blobSize
+                    if (digest != "unknown" && uniqueBlobs.add(digest)) {
+                        uniqueBytes += size
                     }
 
                     blobList.add(mapOf(
-                        "digest" to (digest ?: "unknown"),
-                        "sessionID" to blobRow.sessionID,
-                        "blobNumber" to blobRow.blobNumber,
-                        "size" to blobSize
+                        "digest" to digest,
+                        "sessionID" to sessionID,
+                        "blobNumber" to (blobNumber ?: "null"),
+                        "size" to size
                     ))
                 }
 
@@ -903,11 +914,8 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
 
                 // Find most referenced blobs
                 val blobSizes = mutableMapOf<String, Long>()
-                blobStore.eachBlob { blobRow ->
-                    val digest = blobRow.digest
-                    if (digest != null) {
-                        blobSizes[digest] = blobRow.content.size.toLong()
-                    }
+                blobStore.eachBlobSize { digest, size ->
+                    blobSizes[digest] = size
                 }
 
                 val mostReferencedBlobs = blobCounts.entries

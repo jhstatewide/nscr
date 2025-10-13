@@ -37,6 +37,12 @@ interface Blobstore {
     fun getBlob(imageVersion: ImageVersion, handler: (InputStream, Handle) -> Unit)
     fun countBlobs(): Long
     fun eachBlob(function: (BlobRow) -> Unit)
+    @Throws(Exception::class)
+    fun eachBlobSize(function: (String, Long) -> Unit)
+    @Throws(Exception::class)
+    fun eachBlobMetadata(function: (String, String, Int?, Long) -> Unit)
+    @Throws(Exception::class)
+    fun fixBlobSizes(): Int
     fun removeManifest(image: ImageVersion)
     fun removeManifestIfExists(image: ImageVersion): Boolean
     fun listRepositories(): List<String>
