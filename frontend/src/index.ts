@@ -38,7 +38,7 @@ function formatAbsoluteTime(timestamp: number): string {
   return date.toLocaleString();
 }
 
-export {};
+export { };
 
 interface RegistryStats {
   repositories: number;
@@ -48,6 +48,8 @@ interface RegistryStats {
   estimatedSpaceToFree: number;
   lastGcRun?: string;
   logStreamClients?: number;
+  uptime?: number;
+  version?: string;
 }
 
 interface LogEntry {
@@ -451,6 +453,9 @@ class RegistryWebInterface {
 
       // Update last refresh time
       this.updateLastRefreshTime();
+
+      // Update system info in footer
+      this.updateSystemInfo(stats);
     } catch (error) {
       container.innerHTML = `
         <div class="alert alert-danger">
@@ -798,9 +803,9 @@ class RegistryWebInterface {
           <h5 class="mb-0">
             Repositories (${this.allRepositories.length} total)
             ${this.allRepositories.length > this.repositoriesPerPage ?
-              ` - Page ${this.currentPage} of ${totalPages} (${startIndex + 1}-${endIndex})` :
-              ''
-            }
+        ` - Page ${this.currentPage} of ${totalPages} (${startIndex + 1}-${endIndex})` :
+        ''
+      }
           </h5>
           ${this.allRepositories.length > this.repositoriesPerPage ? `
             <div class="btn-group pagination-controls" role="group">
@@ -842,8 +847,8 @@ class RegistryWebInterface {
                           <div class="mt-2">
                             <small class="text-muted">Latest tags:</small><br>
                             ${repo.tags.slice(0, 3).map(tag =>
-                              `<span class="badge bg-light text-dark me-1">${tag}</span>`
-                            ).join('')}
+        `<span class="badge bg-light text-dark me-1">${tag}</span>`
+      ).join('')}
                             ${repo.tags.length > 3 ? `<span class="text-muted">+${repo.tags.length - 3} more</span>` : ''}
             </div>
                         ` : ''}
@@ -960,9 +965,9 @@ class RegistryWebInterface {
                         <td><code class="small">${tag.digest ? tag.digest.substring(0, 12) + '...' : 'N/A'}</code></td>
                         <td>
                           ${tag.hasManifest ?
-                            '<span class="badge bg-success">Available</span>' :
-                            '<span class="badge bg-warning">Missing</span>'
-                          }
+        '<span class="badge bg-success">Available</span>' :
+        '<span class="badge bg-warning">Missing</span>'
+      }
                         </td>
                       </tr>
                     `).join('')}
@@ -1212,7 +1217,7 @@ class RegistryWebInterface {
       container.insertBefore(alertDiv, container.firstChild);
 
       // Auto-dismiss after 5 seconds
-    setTimeout(() => {
+      setTimeout(() => {
         if (alertDiv.parentNode) {
           alertDiv.remove();
         }
@@ -1245,8 +1250,8 @@ class RegistryWebInterface {
     });
 
     this.eventSource.addEventListener('log', (event) => {
-        const logEntry: LogEntry = JSON.parse(event.data);
-        this.addLogEntry(logEntry);
+      const logEntry: LogEntry = JSON.parse(event.data);
+      this.addLogEntry(logEntry);
     });
 
     this.eventSource.onerror = (error) => {
@@ -1271,7 +1276,7 @@ class RegistryWebInterface {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
-    this.updateLogStreamStatus(false);
+      this.updateLogStreamStatus(false);
       this.updateLiveIndicator(false);
       this.updateReconnectStatus('Disconnected');
     }
@@ -1700,10 +1705,10 @@ class RegistryWebInterface {
   private updateLogStreamStatus(connected: boolean) {
     const statusElement = document.getElementById('log-stream-status');
     if (statusElement) {
-        if (connected) {
+      if (connected) {
         statusElement.innerHTML = '<i class="bi bi-wifi"></i> Connected';
         statusElement.className = 'badge bg-success';
-        } else {
+      } else {
         statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> Disconnected';
         statusElement.className = 'badge bg-danger';
       }
@@ -1746,7 +1751,7 @@ class RegistryWebInterface {
     if (this.reconnectAttempts <= this.maxReconnectAttempts) {
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s
       delay = Math.min(Math.pow(2, this.reconnectAttempts - 1) * 1000, 300000);
-      } else {
+    } else {
       // After max attempts, use 5-minute intervals
       delay = 300000; // 5 minutes
     }
@@ -1801,6 +1806,40 @@ class RegistryWebInterface {
     if (refreshElement) {
       const now = new Date();
       refreshElement.textContent = now.toLocaleTimeString();
+    }
+  }
+
+  private updateSystemInfo(stats: RegistryStats) {
+    // Update uptime
+    const uptimeElement = document.getElementById('footer-uptime')?.querySelector('span');
+    if (uptimeElement && stats.uptime) {
+      const uptimeMs = stats.uptime;
+      const days = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((uptimeMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
+
+      let uptimeText = '';
+      if (days > 0) {
+        uptimeText = `${days}d ${hours}h ${minutes}m`;
+      } else if (hours > 0) {
+        uptimeText = `${hours}h ${minutes}m`;
+      } else {
+        uptimeText = `${minutes}m`;
+      }
+
+      uptimeElement.textContent = uptimeText;
+    }
+
+    // Update version
+    const versionElement = document.getElementById('footer-version')?.querySelector('span');
+    if (versionElement && stats.version) {
+      versionElement.textContent = stats.version;
+    }
+
+    // Update active clients
+    const clientsElement = document.getElementById('footer-clients')?.querySelector('span');
+    if (clientsElement && stats.logStreamClients !== undefined) {
+      clientsElement.textContent = stats.logStreamClients.toString();
     }
   }
 

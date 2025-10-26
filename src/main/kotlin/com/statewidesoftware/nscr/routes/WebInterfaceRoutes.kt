@@ -72,7 +72,9 @@ class WebInterfaceRoutes(
                         "unreferencedBlobs" to stats.unreferencedBlobs,
                         "estimatedSpaceToFree" to stats.estimatedSpaceToFree,
                         "lastGcRun" to "2024-01-01T00:00:00Z", // You'd track this in production
-                        "logStreamClients" to SseLogAppender.getClientCount()
+                        "logStreamClients" to SseLogAppender.getClientCount(),
+                        "uptime" to (System.currentTimeMillis() - startTime),
+                        "version" to "2.0"
                     )
 
                     ctx.json(response)
@@ -94,7 +96,9 @@ class WebInterfaceRoutes(
                                     "unreferencedBlobs" to stats.unreferencedBlobs,
                                     "estimatedSpaceToFree" to stats.estimatedSpaceToFree,
                                     "lastGcRun" to "2024-01-01T00:00:00Z",
-                                    "logStreamClients" to SseLogAppender.getClientCount()
+                                    "logStreamClients" to SseLogAppender.getClientCount(),
+                                    "uptime" to (System.currentTimeMillis() - startTime),
+                                    "version" to "2.0"
                                 )
                                 ctx.json(response)
                                 return@get
