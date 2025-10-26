@@ -4,6 +4,10 @@
 
 There are only a few implementations of container registries out there. I basically want the SQLite of container registries. A simple, easy to use, and easy to understand container registry.
 
+## Obligatory Screenshot
+
+<img width="3840" height="4706" alt="nscr_webui_screenshot" src="https://github.com/user-attachments/assets/b4130d59-95b2-4d57-bb89-d7949255ee36" />
+
 ## Quick Start with Docker
 
 The easiest way to run NSCR is using the official Docker images:
