@@ -4,6 +4,47 @@
 
 There are only a few implementations of container registries out there. I basically want the SQLite of container registries. A simple, easy to use, and easy to understand container registry.
 
+## Quick Start with Docker
+
+The easiest way to run NSCR is using the official Docker images:
+
+### Default JDK Version
+```bash
+# Pull and run the default JDK version
+docker pull docker.io/statewide/nscr:latest
+docker run -p 7000:7000 docker.io/statewide/nscr:latest
+```
+
+### Semeru OpenJ9 Version (Memory Optimized)
+```bash
+# Pull and run the Semeru OpenJ9 version (75% less memory usage)
+docker pull docker.io/statewide/nscr-semeru:latest
+docker run -p 7000:7000 docker.io/statewide/nscr-semeru:latest
+```
+
+### With Persistent Data
+```bash
+# Run with persistent data storage
+docker run -p 7000:7000 -v nscr-data:/home/app/data docker.io/statewide/nscr:latest
+```
+
+### Using Docker Compose
+```yaml
+version: '3.8'
+services:
+  nscr:
+    image: docker.io/statewide/nscr:latest
+    ports:
+      - "7000:7000"
+    volumes:
+      - nscr-data:/home/app/data
+
+volumes:
+  nscr-data:
+```
+
+**Registry will be available at:** http://localhost:7000
+
 ## Example walkthrough when pushing an image
 
 This registry is designed to be a valid target for OCI-compliant container runtimes to be able to push
