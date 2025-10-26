@@ -4,13 +4,33 @@
 
 There are only a few implementations of container registries out there. I basically want the SQLite of container registries. A simple, easy to use, and easy to understand container registry.
 
+I had wanted to try making my own container registry for a while now, and this is the result. One of my frustrations with the official registry is that it doesn't seem very well behaved when wanting to delete images, leaving garbage and bloating your disk space forever. This is especially annoying for using it in a CI/CD pipeline, where lots of images are being pushed and pulled constantly.
+
+This registry is implemented on top of an ACID database and we are able to safely delete images and reclaim disk space transactionally.
+
+I also wanted something that's really easy to set up and doesn't have a huge footprint.
+
+This is probably best suited for running behind your firewall and not exposed to the public internet, but in theory it could be used as as a public registry if you really wanted to.
+
 ## Obligatory Screenshot
 
 <img width="3840" height="4706" alt="nscr_webui_screenshot" src="https://github.com/user-attachments/assets/b4130d59-95b2-4d57-bb89-d7949255ee36" />
 
+## Key Features
+
+- **Safe Image Deletion** - ACID database ensures images can be safely deleted and disk space reclaimed
+- **Easy to Run** - Docker images are available for both default JDK and Semeru OpenJ9, making it easy to get started
+- **Real-time Web UI** - Live monitoring with server-sent events for logs, repositories, and throughput
+- **OCI Registry API v2** - Full compatibility with Docker and other OCI-compliant runtimes
+- **Garbage Collection** - Automatic cleanup of orphaned blobs and manifests
+- **Throughput Monitoring** - Real-time performance tracking with historical data
+- **Torture Testing** - Built-in comprehensive testing framework for validation
+- **Lightweight** - Small footprint, easy setup, minimal resource usage
+- **Memory Optimized** - Semeru OpenJ9 variant uses 75% less memory
+
 ## Quick Start with Docker
 
-The easiest way to run NSCR is using the official Docker images:
+The easiest way to run NSCR is using the official Docker images.
 
 ### Default JDK Version
 ```bash
@@ -25,6 +45,8 @@ docker run -p 7000:7000 docker.io/statewide/nscr:latest
 docker pull docker.io/statewide/nscr-semeru:latest
 docker run -p 7000:7000 docker.io/statewide/nscr-semeru:latest
 ```
+
+**What is Semeru OpenJ9?** IBM Semeru Runtime combines OpenJDK class libraries with the Eclipse OpenJ9 JVM, providing faster startup times, improved performance, and significantly reduced memory usage compared to standard OpenJDK. This makes it ideal for containerized environments where resource efficiency is critical.
 
 ### With Persistent Data
 ```bash
