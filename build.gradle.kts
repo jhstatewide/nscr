@@ -13,6 +13,13 @@ plugins {
 group = "com.statewidesoftware"
 version = "1.0-SNAPSHOT"
 
+// Docker registry configuration
+val dockerRegistry = project.findProperty("dockerRegistry") ?: "docker.io"
+val dockerNamespace = project.findProperty("dockerNamespace") ?: "statewide"
+val imageName = "nscr"
+val defaultImageName = "$dockerRegistry/$dockerNamespace/$imageName"
+val semeruImageName = "$dockerRegistry/$dockerNamespace/$imageName-semeru"
+
 application {
     mainClass.set("com.statewidesoftware.nscr.ServerKt")
 }
@@ -454,6 +461,70 @@ tasks.register<Exec>("dockerBuild") {
     }
 }
 
+// Task to build and tag both variants for registry push
+tasks.register<Exec>("dockerBuildForRegistry") {
+    group = "docker"
+    description = "Build and tag both JDK variants for registry push with versioning"
+
+    doFirst {
+        println("🐳 Building NSCR images for registry push...")
+        println("📦 Building both JDK and Semeru variants")
+        println("🏷️  Tagging with version: ${version}")
+        println("📋 Default image: $defaultImageName")
+        println("📋 Semeru image: $semeruImageName")
+    }
+
+    // Enable BuildKit and use cache mounts
+    environment("DOCKER_BUILDKIT", "1")
+    commandLine("docker", "build",
+        "-t", "$defaultImageName:${version}",
+        "-t", "$defaultImageName:latest",
+        "--target", "default",
+        ".")
+
+    doLast {
+        println("✅ Default JDK image built and tagged!")
+    }
+}
+
+// Task to build Semeru variant for registry push
+tasks.register<Exec>("dockerBuildSemeruForRegistry") {
+    group = "docker"
+    description = "Build and tag Semeru variant for registry push with versioning"
+
+    doFirst {
+        println("🐳 Building NSCR Semeru image for registry push...")
+        println("📦 Building Semeru OpenJ9 variant")
+        println("🏷️  Tagging with version: ${version}")
+        println("📋 Semeru image: $semeruImageName")
+    }
+
+    // Enable BuildKit and use cache mounts
+    environment("DOCKER_BUILDKIT", "1")
+    commandLine("docker", "build",
+        "-t", "$semeruImageName:${version}",
+        "-t", "$semeruImageName:latest",
+        "--target", "semeru",
+        ".")
+
+    doLast {
+        println("✅ Semeru image built and tagged!")
+    }
+}
+
+// Task to build both variants
+tasks.register("dockerBuildAll") {
+    group = "docker"
+    description = "Build both JDK and Semeru variants for registry push"
+    dependsOn("dockerBuildForRegistry", "dockerBuildSemeruForRegistry")
+
+    doLast {
+        println("✅ Both variants built successfully!")
+        println("📋 Default JDK: $defaultImageName:${version}")
+        println("📋 Semeru OpenJ9: $semeruImageName:${version}")
+    }
+}
+
 // Task to run the NSCR Docker container
 tasks.register<Exec>("dockerRun") {
     group = "docker"
@@ -644,4 +715,58 @@ tasks.register<JavaExec>("runWithShutdown") {
 
     standardOutput = System.out
     errorOutput = System.err
+}
+
+
+// Task to push default JDK image to registry
+tasks.register<Exec>("dockerPushDefault") {
+    group = "docker"
+    description = "Push default JDK image to container registry"
+    dependsOn("dockerBuildForRegistry")
+
+    doFirst {
+        println("🚀 Pushing default JDK image to registry...")
+        println("📋 Pushing: $defaultImageName:${version}")
+        println("📋 Pushing: $defaultImageName:latest")
+    }
+
+    commandLine("docker", "push", "$defaultImageName:${version}")
+
+    doLast {
+        println("✅ Default JDK image pushed successfully!")
+        println("🌐 Image available at: $defaultImageName:${version}")
+    }
+}
+
+// Task to push Semeru image to registry
+tasks.register<Exec>("dockerPushSemeru") {
+    group = "docker"
+    description = "Push Semeru OpenJ9 image to container registry"
+    dependsOn("dockerBuildSemeruForRegistry")
+
+    doFirst {
+        println("🚀 Pushing Semeru OpenJ9 image to registry...")
+        println("📋 Pushing: $semeruImageName:${version}")
+        println("📋 Pushing: $semeruImageName:latest")
+    }
+
+    commandLine("docker", "push", "$semeruImageName:${version}")
+
+    doLast {
+        println("✅ Semeru OpenJ9 image pushed successfully!")
+        println("🌐 Image available at: $semeruImageName:${version}")
+    }
+}
+
+// Task to push both variants
+tasks.register("dockerPushAll") {
+    group = "docker"
+    description = "Push both JDK and Semeru variants to container registry"
+    dependsOn("dockerPushDefault", "dockerPushSemeru")
+
+    doLast {
+        println("✅ Both variants pushed successfully!")
+        println("🌐 Default JDK: $defaultImageName:${version}")
+        println("🌐 Semeru OpenJ9: $semeruImageName:${version}")
+    }
 }

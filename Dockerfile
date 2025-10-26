@@ -57,8 +57,8 @@ RUN --mount=type=cache,target=/root/.npm \
 # Build the application (skip tests for Docker image)
 RUN ./gradlew build -x test --no-daemon
 
-# Runtime stage
-FROM ubuntu:22.04
+# Runtime stage (default target)
+FROM ubuntu:22.04 AS default
 
 # Update package lists with cache mount
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -149,19 +149,19 @@ ENTRYPOINT ["/home/app/entrypoint.sh"]
 
 # Run with OpenJ9 minimal memory footprint JVM options
 CMD ["java", \
-     "-XX:+UseContainerSupport", \
-     "-Xmx128m", \
-     "-Xms64m", \
-     "-XX:+IdleTuningGcOnIdle", \
-     "-XX:+IdleTuningCompactOnIdle", \
-     "-Xtune:virtualized", \
-     "-Xcompressedrefs", \
-     "-Xcodecachetotal32m", \
-     "-Xshareclasses", \
-     "-XX:SharedCacheHardLimit=50m", \
-     "-Xscmx20m", \
-     "-Xgcpolicy:gencon", \
-     "-Xgc:concurrentScavenge", \
-     "-XX:+UseStringDeduplication", \
-     "-XX:+OptimizeStringConcat", \
-     "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
+    "-XX:+UseContainerSupport", \
+    "-Xmx128m", \
+    "-Xms64m", \
+    "-XX:+IdleTuningGcOnIdle", \
+    "-XX:+IdleTuningCompactOnIdle", \
+    "-Xtune:virtualized", \
+    "-Xcompressedrefs", \
+    "-Xcodecachetotal32m", \
+    "-Xshareclasses", \
+    "-XX:SharedCacheHardLimit=50m", \
+    "-Xscmx20m", \
+    "-Xgcpolicy:gencon", \
+    "-Xgc:concurrentScavenge", \
+    "-XX:+UseStringDeduplication", \
+    "-XX:+OptimizeStringConcat", \
+    "-jar", "/home/app/libs/nscr-1.0-SNAPSHOT-all.jar"]
