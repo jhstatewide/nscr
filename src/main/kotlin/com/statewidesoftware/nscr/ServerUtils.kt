@@ -46,10 +46,10 @@ fun extractManifestMediaType(manifestJson: String): String {
         val jsonObject = com.google.gson.JsonParser.parseString(manifestJson).asJsonObject
         val mediaType = jsonObject.get("mediaType")?.asString
 
-        // Return the media type if found, otherwise default to Docker v2
+        // Return the media type if found, otherwise default to OCI v2
         mediaType ?: "application/vnd.docker.distribution.manifest.v2+json"
     } catch (e: Exception) {
-        // If parsing fails, default to Docker v2 manifest type
+        // If parsing fails, default to OCI v2 manifest type
         "application/vnd.docker.distribution.manifest.v2+json"
     }
 }

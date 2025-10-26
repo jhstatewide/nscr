@@ -6,7 +6,7 @@ There are only a few implementations of container registries out there. I basica
 
 ## Example walkthrough when pushing an image
 
-This registry is designed to be a valid target for the official Docker daemon to be able to push
+This registry is designed to be a valid target for OCI-compliant container runtimes to be able to push
 and pull. What actually happens when we call `docker push`?
 
 To push an image, we will be pushing at least two things: a manifest and a blob. The manifest is a JSON file that describes the image, and the blob is the actual image data. The manifest will contain a list of layers, which are the blobs that make up the image.
@@ -36,7 +36,7 @@ We first need to get a session ID. We get this by doing a POST to `/v2/<image-na
 
 ## Features
 
-- ✅ **Push/Pull Images** - Full Docker Registry API v2 compatibility
+- ✅ **Push/Pull Images** - Full OCI Registry API v2 compatibility
 - ✅ **Image Deletion** - Remove specific images by repository and tag
 - ✅ **Garbage Collection** - Automatically clean up unreferenced blobs
 - ✅ **Repository Management** - List repositories and tags
@@ -51,13 +51,13 @@ We first need to get a session ID. We get this by doing a POST to `/v2/<image-na
   - [Torture Testing](doc/TORTURE_TEST_README.md) - Advanced testing strategies
   - [AI Development](doc/AGENTS.md) - Development workflow with AI agents
 
-## Docker Support
+## Container Support
 
-NSCR can be built and run as a Docker container with two JVM options:
+NSCR can be built and run as a container with two JVM options:
 
 ### Standard OpenJDK (Default)
 ```bash
-# Build the Docker image (with BuildKit cache mounts for faster builds)
+# Build the container image (with BuildKit cache mounts for faster builds)
 ./gradlew dockerBuild
 
 # Run the container
@@ -69,7 +69,7 @@ docker run -p 7000:7000 nscr:latest
 
 ### IBM Semeru OpenJ9 (Container-Optimized)
 ```bash
-# Build the Semeru OpenJ9 Docker image (minimal memory usage)
+# Build the Semeru OpenJ9 container image (minimal memory usage)
 ./gradlew dockerBuildSemeru
 
 # Run the Semeru container
@@ -79,7 +79,7 @@ docker run -p 7000:7000 nscr:semeru
 ./gradlew dockerRunSemeru
 ```
 
-### Docker Image Features
+### Container Image Features
 - **Multi-stage build** for optimized size
 - **BuildKit cache mounts** for faster builds
 - **Java 17 runtime** (OpenJDK or Semeru OpenJ9)

@@ -41,7 +41,7 @@ fun Context.requireAuth() {
 
     val authHeader = this.header("Authorization")
     if (authHeader == null || !authHeader.startsWith("Basic ")) {
-        this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+        this.header("WWW-Authenticate", "Basic realm=\"Container Registry\"")
         this.status(401)
         this.result("Authentication required")
         return
@@ -53,7 +53,7 @@ fun Context.requireAuth() {
         val parts = decoded.split(":", limit = 2)
 
         if (parts.size != 2) {
-            this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+            this.header("WWW-Authenticate", "Basic realm=\"Container Registry\"")
             this.status(401)
             this.result("Invalid authentication format")
             return
@@ -63,7 +63,7 @@ fun Context.requireAuth() {
         val password = parts[1]
 
         if (username != Config.AUTH_USERNAME || password != Config.AUTH_PASSWORD) {
-            this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+            this.header("WWW-Authenticate", "Basic realm=\"Container Registry\"")
             this.status(401)
             this.result("Invalid credentials")
             return
@@ -71,7 +71,7 @@ fun Context.requireAuth() {
 
         // Authentication successful, continue
     } catch (e: Exception) {
-        this.header("WWW-Authenticate", "Basic realm=\"Docker Registry\"")
+        this.header("WWW-Authenticate", "Basic realm=\"Container Registry\"")
         this.status(401)
         this.result("Authentication error")
         return

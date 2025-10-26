@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project (New and Shiny Container Registry) is a Kotlin program that has it as a goal to be an OCI compliant container registry, meaning Docker
+This project (New and Shiny Container Registry) is a Kotlin program that has it as a goal to be an OCI compliant container registry, meaning OCI-compliant container runtimes
 and things compliant with it can push, pull images from it.
 
 We use H2 SQL as a backend datastore.

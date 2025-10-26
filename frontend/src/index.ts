@@ -229,7 +229,7 @@ class RegistryWebInterface {
                 <i class="bi bi-box"></i> NSCR Registry
               </h6>
               <p class="small text-muted">
-                New and Shiny Container Registry - A modern, lightweight Docker registry with advanced features.
+                New and Shiny Container Registry - A modern, lightweight container registry with advanced features.
               </p>
             </div>
             <div class="col-md-4">
@@ -365,7 +365,7 @@ class RegistryWebInterface {
                 <i class="bi bi-box"></i> NSCR Registry
               </h6>
               <p class="small text-muted">
-                New and Shiny Container Registry - A modern, lightweight Docker registry with advanced features.
+                New and Shiny Container Registry - A modern, lightweight container registry with advanced features.
               </p>
             </div>
             <div class="col-md-4">

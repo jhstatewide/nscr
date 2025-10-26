@@ -10,7 +10,7 @@ This directory contains comprehensive documentation for the NSCR (New and Shiny 
 - **[AUTHENTICATION.md](AUTHENTICATION.md)** - Authentication system documentation
 
 ### Testing Documentation
-- **[TEST_CLEANUP.md](TEST_CLEANUP.md)** - Guide for cleaning up test artifacts and Docker images
+- **[TEST_CLEANUP.md](TEST_CLEANUP.md)** - Guide for cleaning up test artifacts and container images
 - **[TORTURE_TEST_README.md](TORTURE_TEST_README.md)** - Comprehensive guide to the torture testing system
 
 ## 🚀 Quick Links

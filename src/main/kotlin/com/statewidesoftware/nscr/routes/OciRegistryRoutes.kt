@@ -14,7 +14,7 @@ import io.javalin.Javalin
 import io.javalin.http.Context
 import mu.KLogger
 
-class DockerRegistryRoutes(
+class OciRegistryRoutes(
     private val app: Javalin,
     private val blobStore: Blobstore,
     private val sessionTracker: SessionTracker,
@@ -247,7 +247,7 @@ class DockerRegistryRoutes(
             }
         }
 
-        // Docker Registry API v2 endpoints for deletion and management
+        // OCI Registry API v2 endpoints for deletion and management
         app.delete("/v2/*/manifests/{reference}") { ctx ->
             val fullPath = ctx.path()
             val name = fullPath.substringAfter("/v2/").substringBefore("/manifests")

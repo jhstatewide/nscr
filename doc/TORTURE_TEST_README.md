@@ -6,7 +6,7 @@ The Registry Torture Test is a comprehensive correctness test that randomly perf
 
 The torture test performs the following operations randomly:
 
-- **Push**: Pulls Docker images from Docker Hub and pushes them to the registry
+- **Push**: Pulls container images from Docker Hub and pushes them to the registry
 - **Delete**: Deletes entire repositories from the registry
 - **Query**: Queries repository information and tags
 - **List Repos**: Lists all repositories in the registry
@@ -21,7 +21,7 @@ After each operation, the test validates that:
 ## Prerequisites
 
 1. **Running NSCR Registry**: The registry must be running on `localhost:7000` (or specify custom URL)
-2. **Docker**: Docker must be running and accessible
+2. **Container Runtime**: Docker must be running and accessible
 3. **Network Access**: Internet access to pull images from Docker Hub
 
 ## Available Gradle Tasks
@@ -125,7 +125,7 @@ You can customize the torture test parameters using Gradle properties:
 
 ## Test Images
 
-The torture test uses a comprehensive set of Docker images with multiple tags:
+The torture test uses a comprehensive set of container images with multiple tags:
 
 ### Base Images
 - **alpine**: `latest`, `3.18`, `3.17`, `3.16`
@@ -250,11 +250,11 @@ Final Registry State:
    ```
    **Solution**: Start the NSCR registry with `./gradlew run`
 
-2. **Docker Not Running**
+2. **Container Runtime Not Running**
    ```
-   Exception: Docker is not running
+   Exception: Container runtime is not running
    ```
-   **Solution**: Start Docker daemon
+   **Solution**: Start container runtime daemon
 
 3. **Network Issues**
    ```
@@ -266,7 +266,7 @@ Final Registry State:
    ```
    Exception: Permission denied
    ```
-   **Solution**: Ensure Docker daemon is accessible (user in docker group)
+   **Solution**: Ensure container runtime daemon is accessible (user in docker group)
 
 ### Debug Mode
 
@@ -319,7 +319,7 @@ The torture test complements existing unit and integration tests:
 - **Operation Delay**: Adjust `operationDelayMs` based on system performance
 - **Sequential Operations**: The test runs operations sequentially to ensure deterministic validation
 - **Resource Usage**: Each push operation downloads and uploads images, consuming bandwidth and disk space
-- **Cleanup**: The test automatically cleans up local Docker images after pushing
+- **Cleanup**: The test automatically cleans up local container images after pushing
 
 ### Concurrent Torture Test
 - **Worker Count**: More workers increase concurrency but also resource usage
@@ -334,7 +334,7 @@ The torture test complements existing unit and integration tests:
 To extend the torture test:
 
 1. **Add New Operations**: Implement new operation types in `RegistryTortureTest.kt`
-2. **Add New Images**: Extend the `testImages` list with additional Docker images
+2. **Add New Images**: Extend the `testImages` list with additional container images
 3. **Improve Validation**: Enhance validation logic for better correctness checking
 4. **Add Metrics**: Include additional metrics in the report generation
 

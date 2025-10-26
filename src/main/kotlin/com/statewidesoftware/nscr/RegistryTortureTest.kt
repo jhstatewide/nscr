@@ -1,6 +1,6 @@
 package com.statewidesoftware.nscr
 
-// Docker operations will be handled via ProcessBuilder for simplicity
+// Container runtime operations will be handled via ProcessBuilder for simplicity
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import mu.KotlinLogging
@@ -42,9 +42,9 @@ class RegistryTortureTest(
         .connectTimeout(Duration.ofSeconds(10))
         .build()
     private val gson = Gson()
-    
-    // Docker operations will be handled via ProcessBuilder
-    
+
+    // Container runtime operations will be handled via ProcessBuilder
+
     // Test data - images with multiple tags for comprehensive testing
     private val testImages = listOf(
         TestImage("alpine", listOf("latest", "3.18", "3.17", "3.16")),
@@ -60,25 +60,25 @@ class RegistryTortureTest(
         TestImage("httpd", listOf("latest", "alpine", "2.4")),
         TestImage("memcached", listOf("latest", "alpine", "1.6"))
     )
-    
+
     // Statistics tracking
     private val operationCount = AtomicInteger(0)
     private val successCount = AtomicInteger(0)
     private val failureCount = AtomicInteger(0)
     private val startTime = AtomicLong(System.currentTimeMillis())
-    
+
     // Registry state tracking
     private val knownRepositories = mutableSetOf<String>()
     private val knownTags = mutableMapOf<String, MutableSet<String>>()
-    
+
     data class TestImage(val name: String, val tags: List<String>)
-    
+
     data class RegistryStats(
         val repositories: Int,
         val totalBlobs: Int,
         val totalManifests: Int
     )
-    
+
     data class OperationResult(
         val operation: String,
         val success: Boolean,
@@ -87,13 +87,13 @@ class RegistryTortureTest(
         val actualStats: RegistryStats?,
         val validationPassed: Boolean
     )
-    
+
     data class CommandResult(
         val exitCode: Int,
         val output: String,
         val error: String
     )
-    
+
     /**
      * Main torture test execution
      */
@@ -102,28 +102,28 @@ class RegistryTortureTest(
         logger.info { "Registry URL: $registryUrl" }
         logger.info { "Max Operations: $maxOperations" }
         logger.info { "Operation Delay: ${operationDelayMs}ms" }
-        
+
         val results = mutableListOf<OperationResult>()
-        
+
         try {
             // Initial registry check with retry logic
             if (!checkRegistryHealth()) {
                 throw RuntimeException("Registry is not healthy")
             }
-            
+
             // Get initial state
             val initialStats = getRegistryStats()
             logger.info { "Initial registry state: $initialStats" }
-            
+
             // Perform random operations
             repeat(maxOperations) { iteration ->
                 val operation = selectRandomOperation()
                 val progress = String.format("%.1f%%", (iteration + 1) * 100.0 / maxOperations)
                 logger.info { "[$progress] Operation ${iteration + 1}/$maxOperations: $operation" }
-                
+
                 val result = executeOperation(operation)
                 results.add(result)
-                
+
                 // Log result with progress
                 if (result.success && result.validationPassed) {
                     logger.info { "[$progress] ✓ $operation succeeded and validation passed" }
@@ -132,13 +132,13 @@ class RegistryTortureTest(
                     logger.warn { "[$progress] ✗ $operation failed or validation failed: ${result.message}" }
                     failureCount.incrementAndGet()
                 }
-                
+
                 // Delay between operations
                 if (operationDelayMs > 0) {
                     Thread.sleep(operationDelayMs)
                 }
             }
-            
+
         } catch (e: Exception) {
             logger.error(e) { "Torture test failed with exception" }
             throw e
@@ -152,12 +152,12 @@ class RegistryTortureTest(
             logger.info { "Duration: ${duration}ms" }
             logger.info { "Success rate: ${(successCount.get() * 100.0 / operationCount.get()).toInt()}%" }
         }
-        
+
         return results
     }
-    
+
     /**
-     * Execute a Docker command via ProcessBuilder
+     * Execute a container runtime command via ProcessBuilder
      */
     private fun executeDockerCommand(vararg args: String): CommandResult {
         val processBuilder = ProcessBuilder("docker", *args)
@@ -169,7 +169,7 @@ class RegistryTortureTest(
             val finished = process.waitFor(30, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroyForcibly()
-                CommandResult(-1, "", "Docker command timed out after 30s")
+                CommandResult(-1, "", "Container runtime command timed out after 30s")
             } else {
                 val output = process.inputStream.bufferedReader().readText()
                 val error = process.errorStream.bufferedReader().readText()
@@ -177,11 +177,11 @@ class RegistryTortureTest(
                 CommandResult(exitCode, output, error)
             }
         } catch (e: IOException) {
-            // Docker binary not found or failed to start
+            // Container runtime binary not found or failed to start
             CommandResult(-1, "", "Failed to execute docker command: ${e.message}")
         }
     }
-    
+
     /**
      * Check if registry is healthy and accessible
      * Retries up to 5 times with a short delay between attempts.
@@ -224,7 +224,7 @@ class RegistryTortureTest(
         logger.error { "Registry health check failed after $maxRetries attempts" }
         return false
     }
-    
+
     /**
      * Get current registry statistics
      */
@@ -233,12 +233,12 @@ class RegistryTortureTest(
             .uri(URI.create("http://$registryUrl/api/web/status"))
             .timeout(Duration.ofSeconds(10))
             .build()
-        
+
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() != 200) {
             throw RuntimeException("Failed to get registry stats: ${response.statusCode()}")
         }
-        
+
         val json = gson.fromJson(response.body(), JsonObject::class.java)
         return RegistryStats(
             repositories = json.get("repositories")?.asInt ?: 0,
@@ -246,7 +246,7 @@ class RegistryTortureTest(
             totalManifests = json.get("totalManifests")?.asInt ?: 0
         )
     }
-    
+
     /**
      * Select a random operation to perform
      */
@@ -254,13 +254,13 @@ class RegistryTortureTest(
         val operations = listOf("push", "delete", "query", "list_repos", "list_tags")
         return operations[ThreadLocalRandom.current().nextInt(operations.size)]
     }
-    
+
     /**
      * Execute the selected operation
      */
     private fun executeOperation(operation: String): OperationResult {
         operationCount.incrementAndGet()
-        
+
         return try {
             when (operation) {
                 "push" -> executePushOperation()
@@ -275,7 +275,7 @@ class RegistryTortureTest(
             OperationResult(operation, false, e.message ?: "Unknown error", null, null, false)
         }
     }
-    
+
     /**
      * Execute a push operation
      */
@@ -285,48 +285,48 @@ class RegistryTortureTest(
         // Use test-specific prefix to avoid conflicts with real images
         val testImageName = "nscr-test-registry-${image.name}"
         val registryImage = "${registryUrl}/${testImageName}:${tag}"
-        
+
         logger.debug { "Pushing $registryImage" }
-        
+
         // Get stats before operation
         val statsBefore = getRegistryStats()
-        
+
         try {
             // Pull the image first
             val pullResult = executeDockerCommand("pull", "${image.name}:${tag}")
             if (pullResult.exitCode != 0) {
                 throw RuntimeException("Failed to pull image: ${pullResult.error}")
             }
-            
+
             // Tag for registry
             val tagResult = executeDockerCommand("tag", "${image.name}:${tag}", registryImage)
             if (tagResult.exitCode != 0) {
                 throw RuntimeException("Failed to tag image: ${tagResult.error}")
             }
-            
+
             // Push to registry
             val pushResult = executeDockerCommand("push", registryImage)
             if (pushResult.exitCode != 0) {
                 throw RuntimeException("Failed to push image: ${pushResult.error}")
             }
-            
+
             // Update our tracking
             knownRepositories.add(testImageName)
             knownTags.getOrPut(testImageName) { mutableSetOf() }.add(tag)
-            
+
             // Get stats after operation
             val statsAfter = getRegistryStats()
-            
+
             // Validate state
             val validationPassed = validatePushOperation(statsBefore, statsAfter, testImageName, tag)
-            
+
             // Clean up local image
             try {
                 executeDockerCommand("rmi", registryImage)
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to clean up local image $registryImage" }
             }
-            
+
             return OperationResult(
                 operation = "push",
                 success = true,
@@ -335,7 +335,7 @@ class RegistryTortureTest(
                 actualStats = statsAfter,
                 validationPassed = validationPassed
             )
-            
+
         } catch (e: Exception) {
             return OperationResult(
                 operation = "push",
@@ -347,7 +347,7 @@ class RegistryTortureTest(
             )
         }
     }
-    
+
     /**
      * Execute a delete operation
      */
@@ -362,10 +362,10 @@ class RegistryTortureTest(
                 validationPassed = true
             )
         }
-        
+
         val repository = knownRepositories.random()
         val statsBefore = getRegistryStats()
-        
+
         try {
             // Delete repository via API
             val request = HttpRequest.newBuilder()
@@ -373,17 +373,17 @@ class RegistryTortureTest(
                 .DELETE()
                 .timeout(Duration.ofSeconds(30))
                 .build()
-            
+
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            
+
             if (response.statusCode() in 200..299) {
                 // Update our tracking
                 knownRepositories.remove(repository)
                 knownTags.remove(repository)
-                
+
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateDeleteOperation(statsBefore, statsAfter, repository)
-                
+
                 return OperationResult(
                     operation = "delete",
                     success = true,
@@ -402,7 +402,7 @@ class RegistryTortureTest(
                     validationPassed = false
                 )
             }
-            
+
         } catch (e: Exception) {
             return OperationResult(
                 operation = "delete",
@@ -414,7 +414,7 @@ class RegistryTortureTest(
             )
         }
     }
-    
+
     /**
      * Execute a query operation (get repository info)
      */
@@ -429,26 +429,26 @@ class RegistryTortureTest(
                 validationPassed = true
             )
         }
-        
+
         val repository = knownRepositories.random()
         val statsBefore = getRegistryStats()
-        
+
         try {
             // Query repository tags
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("http://$registryUrl/v2/$repository/tags/list"))
                 .timeout(Duration.ofSeconds(10))
                 .build()
-            
+
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            
+
             if (response.statusCode() == 200) {
                 val json = gson.fromJson(response.body(), JsonObject::class.java)
                 val tags = json.getAsJsonArray("tags")?.map { it.asString } ?: emptyList()
-                
+
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateQueryOperation(statsBefore, statsAfter, repository, tags)
-                
+
                 return OperationResult(
                     operation = "query",
                     success = true,
@@ -467,7 +467,7 @@ class RegistryTortureTest(
                     validationPassed = false
                 )
             }
-            
+
         } catch (e: Exception) {
             return OperationResult(
                 operation = "query",
@@ -479,28 +479,28 @@ class RegistryTortureTest(
             )
         }
     }
-    
+
     /**
      * Execute a list repositories operation
      */
     private fun executeListReposOperation(): OperationResult {
         val statsBefore = getRegistryStats()
-        
+
         try {
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("http://$registryUrl/v2/_catalog"))
                 .timeout(Duration.ofSeconds(10))
                 .build()
-            
+
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            
+
             if (response.statusCode() == 200) {
                 val json = gson.fromJson(response.body(), JsonObject::class.java)
                 val repositories = json.getAsJsonArray("repositories")?.map { it.asString } ?: emptyList()
-                
+
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateListReposOperation(statsBefore, statsAfter, repositories)
-                
+
                 return OperationResult(
                     operation = "list_repos",
                     success = true,
@@ -519,7 +519,7 @@ class RegistryTortureTest(
                     validationPassed = false
                 )
             }
-            
+
         } catch (e: Exception) {
             return OperationResult(
                 operation = "list_repos",
@@ -531,7 +531,7 @@ class RegistryTortureTest(
             )
         }
     }
-    
+
     /**
      * Execute a list tags operation
      */
@@ -546,25 +546,25 @@ class RegistryTortureTest(
                 validationPassed = true
             )
         }
-        
+
         val repository = knownRepositories.random()
         val statsBefore = getRegistryStats()
-        
+
         try {
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("http://$registryUrl/v2/$repository/tags/list"))
                 .timeout(Duration.ofSeconds(10))
                 .build()
-            
+
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            
+
             if (response.statusCode() == 200) {
                 val json = gson.fromJson(response.body(), JsonObject::class.java)
                 val tags = json.getAsJsonArray("tags")?.map { it.asString } ?: emptyList()
-                
+
                 val statsAfter = getRegistryStats()
                 val validationPassed = validateListTagsOperation(statsBefore, statsAfter, repository, tags)
-                
+
                 return OperationResult(
                     operation = "list_tags",
                     success = true,
@@ -583,7 +583,7 @@ class RegistryTortureTest(
                     validationPassed = false
                 )
             }
-            
+
         } catch (e: Exception) {
             return OperationResult(
                 operation = "list_tags",
@@ -595,7 +595,7 @@ class RegistryTortureTest(
             )
         }
     }
-    
+
     /**
      * Validate push operation results
      */
@@ -609,23 +609,23 @@ class RegistryTortureTest(
         // - Repository count to increase (if new repository) or stay same (if existing)
         // - Manifest count to increase
         // - Blob count to increase (new layers)
-        
+
         val repoCountValid = statsAfter.repositories >= statsBefore.repositories
         val manifestCountValid = statsAfter.totalManifests > statsBefore.totalManifests
         val blobCountValid = statsAfter.totalBlobs >= statsBefore.totalBlobs
-        
+
         val valid = repoCountValid && manifestCountValid && blobCountValid
-        
+
         if (!valid) {
             logger.warn { "Push validation failed for $repository:$tag" }
             logger.warn { "Before: repos=${statsBefore.repositories}, manifests=${statsBefore.totalManifests}, blobs=${statsBefore.totalBlobs}" }
             logger.warn { "After: repos=${statsAfter.repositories}, manifests=${statsAfter.totalManifests}, blobs=${statsAfter.totalBlobs}" }
             logger.warn { "Repo count valid: $repoCountValid, Manifest count valid: $manifestCountValid, Blob count valid: $blobCountValid" }
         }
-        
+
         return valid
     }
-    
+
     /**
      * Validate delete operation results
      */
@@ -638,23 +638,23 @@ class RegistryTortureTest(
         // - Repository count to decrease
         // - Manifest count to decrease
         // - Blob count to stay same or decrease (blobs might be shared)
-        
+
         val repoCountValid = statsAfter.repositories < statsBefore.repositories
         val manifestCountValid = statsAfter.totalManifests < statsBefore.totalManifests
         val blobCountValid = statsAfter.totalBlobs <= statsBefore.totalBlobs
-        
+
         val valid = repoCountValid && manifestCountValid && blobCountValid
-        
+
         if (!valid) {
             logger.warn { "Delete validation failed for $repository" }
             logger.warn { "Before: repos=${statsBefore.repositories}, manifests=${statsBefore.totalManifests}, blobs=${statsBefore.totalBlobs}" }
             logger.warn { "After: repos=${statsAfter.repositories}, manifests=${statsAfter.totalManifests}, blobs=${statsAfter.totalBlobs}" }
             logger.warn { "Repo count valid: $repoCountValid, Manifest count valid: $manifestCountValid, Blob count valid: $blobCountValid" }
         }
-        
+
         return valid
     }
-    
+
     /**
      * Validate query operation results
      */
@@ -666,16 +666,16 @@ class RegistryTortureTest(
     ): Boolean {
         // Query operations should not change registry state
         val valid = statsBefore == statsAfter
-        
+
         if (!valid) {
             logger.warn { "Query validation failed for $repository" }
             logger.warn { "Before: $statsBefore" }
             logger.warn { "After: $statsAfter" }
         }
-        
+
         return valid
     }
-    
+
     /**
      * Validate list repositories operation results
      */
@@ -686,16 +686,16 @@ class RegistryTortureTest(
     ): Boolean {
         // List operations should not change registry state
         val valid = statsBefore == statsAfter
-        
+
         if (!valid) {
             logger.warn { "List repos validation failed" }
             logger.warn { "Before: $statsBefore" }
             logger.warn { "After: $statsAfter" }
         }
-        
+
         return valid
     }
-    
+
     /**
      * Validate list tags operation results
      */
@@ -707,22 +707,22 @@ class RegistryTortureTest(
     ): Boolean {
         // List operations should not change registry state
         val valid = statsBefore == statsAfter
-        
+
         if (!valid) {
             logger.warn { "List tags validation failed for $repository" }
             logger.warn { "Before: $statsBefore" }
             logger.warn { "After: $statsAfter" }
         }
-        
+
         return valid
     }
-    
+
     /**
      * Generate a comprehensive test report
      */
     fun generateReport(results: List<OperationResult>): String {
         val report = StringBuilder()
-        
+
         report.appendLine("=== Registry Torture Test Report ===")
         report.appendLine("Total Operations: ${results.size}")
         report.appendLine("Successful Operations: ${results.count { it.success }}")
@@ -730,7 +730,7 @@ class RegistryTortureTest(
         report.appendLine("Validation Passed: ${results.count { it.validationPassed }}")
         report.appendLine("Validation Failed: ${results.count { !it.validationPassed }}")
         report.appendLine()
-        
+
         // Operation breakdown
         val operationGroups = results.groupBy { it.operation }
         report.appendLine("Operation Breakdown:")
@@ -740,7 +740,7 @@ class RegistryTortureTest(
             report.appendLine("  $operation: ${ops.size} total, $successCount successful, $validationCount validated")
         }
         report.appendLine()
-        
+
         // Failed operations
         val failedOps = results.filter { !it.success || !it.validationPassed }
         if (failedOps.isNotEmpty()) {
@@ -750,7 +750,7 @@ class RegistryTortureTest(
             }
             report.appendLine()
         }
-        
+
         // Final registry state
         try {
             val finalStats = getRegistryStats()
@@ -761,7 +761,7 @@ class RegistryTortureTest(
         } catch (e: Exception) {
             report.appendLine("Failed to get final registry state: ${e.message}")
         }
-        
+
         return report.toString()
     }
 }

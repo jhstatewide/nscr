@@ -5,7 +5,7 @@ import com.statewidesoftware.nscr.auth.requireWebAuth
 import com.statewidesoftware.nscr.blobstore.Blobstore
 import com.statewidesoftware.nscr.blobstore.H2BlobStore
 import com.statewidesoftware.nscr.routes.AdminApiRoutes
-import com.statewidesoftware.nscr.routes.DockerRegistryRoutes
+import com.statewidesoftware.nscr.routes.OciRegistryRoutes
 import com.statewidesoftware.nscr.routes.SseRoutes
 import com.statewidesoftware.nscr.routes.WebInterfaceRoutes
 import io.javalin.Javalin
@@ -118,7 +118,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
     }
 
     private fun bindApp(app: Javalin, logger: KLogger) {
-        // Central authentication for Docker Registry API endpoints
+        // Central authentication for OCI Registry API endpoints
         app.before("/v2") { ctx ->
             logger.trace("AUTH CHECK: ${ctx.method()} to ${ctx.url()}")
             ctx.requireAuth()
@@ -143,7 +143,7 @@ class RegistryServerApp(private val logger: KLogger, blobstore: Blobstore = H2Bl
         }
 
         // Register route handlers
-        DockerRegistryRoutes(app, blobStore, sessionTracker, logger).register()
+        OciRegistryRoutes(app, blobStore, sessionTracker, logger).register()
         AdminApiRoutes(app, blobStore, logger, startTime).register()
         WebInterfaceRoutes(app, blobStore, logger, startTime).register()
         SseRoutes(app, blobStore, logger).register()

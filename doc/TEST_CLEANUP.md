@@ -32,12 +32,12 @@ For even easier cleanup, use the convenience script:
 
 This script:
 - ✅ Sets up the environment automatically
-- ✅ Runs both test data and Docker image cleanup
+- ✅ Runs both test data and container image cleanup
 - ✅ Provides helpful tips and feedback
 
-### 3. Docker Image Cleanup
+### 3. Container Image Cleanup
 
-For Docker-specific cleanup, you have several options:
+For container image-specific cleanup, you have several options:
 
 ```bash
 # Clean up only new test images (nscr-test-registry-* prefix)
@@ -46,7 +46,7 @@ For Docker-specific cleanup, you have several options:
 # Clean up all test images (nscr-test-registry-* and localhost:*nscr-test-* from old runs)
 ./gradlew cleanupAllTestDockerImages
 
-# General Docker cleanup (removes unused images)
+# General container image cleanup (removes unused images)
 ./gradlew cleanupDockerImages
 ```
 
@@ -76,13 +76,13 @@ The cleanup removes:
 - All test directories (e.g., `basic-auth-test-*`, `server-lifecycle-test-*`)
 - All temporary files created by tests
 - H2 database files (`.mv.db`, `.trace.db`)
-- **Docker images with `nscr-test-registry-*` prefix** (new test images)
-- **Docker images with `localhost:*nscr-test-*` pattern** (from old test runs)
+- **Container images with `nscr-test-registry-*` prefix** (new test images)
+- **Container images with `localhost:*nscr-test-*` pattern** (from old test runs)
 
 The cleanup preserves:
 - The `.keep` file (essential for git)
 - The `tmp/test-data/` directory structure
-- **All other Docker images** (your real images are safe!)
+- **All other container images** (your real images are safe!)
 - **Images with `localhost` in the name that don't contain `nscr-test-`**
 
 ## Integration with Tests
