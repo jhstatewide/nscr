@@ -2,7 +2,7 @@
 
 ## Overview 
 
-NSCR is a light-weight, easy to run, self-contained OCI / Docker image registry, with full push/pull support compatible with Docker and an optional web UI for easy management.
+NSCR (New and Shiny Container Registry) is a light-weight, easy to run, self-contained OCI / Docker image registry, with full push/pull support compatible with Docker and an optional web UI for easy management.
 
 ## Key Features
 
