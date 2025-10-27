@@ -1,20 +1,8 @@
 # New and Shiny Container Registry
 
-## Why?
+## Overview 
 
-There are only a few implementations of container registries out there. I basically want the SQLite of container registries. A simple, easy to use, and easy to understand container registry.
-
-I had wanted to try making my own container registry for a while now, and this is the result. One of my frustrations with the official registry is that it doesn't seem very well behaved when wanting to delete images, leaving garbage and bloating your disk space forever. This is especially annoying for using it in a CI/CD pipeline, where lots of images are being pushed and pulled constantly.
-
-This registry is implemented on top of an ACID database and we are able to safely delete images and reclaim disk space transactionally.
-
-I also wanted something that's really easy to set up and doesn't have a huge footprint.
-
-This is probably best suited for running behind your firewall and not exposed to the public internet, but in theory it could be used as as a public registry if you really wanted to.
-
-## Obligatory Screenshot
-
-<img width="3840" height="4706" alt="nscr_webui_screenshot" src="https://github.com/user-attachments/assets/b4130d59-95b2-4d57-bb89-d7949255ee36" />
+NSCR is a light-weight, easy to run, self-contained OCI / Docker image registry, with full push/pull support compatible with Docker and an optional web UI for easy management.
 
 ## Key Features
 
@@ -27,6 +15,10 @@ This is probably best suited for running behind your firewall and not exposed to
 - **Torture Testing** - Built-in comprehensive testing framework for validation
 - **Lightweight** - Small footprint, easy setup, minimal resource usage
 - **Memory Optimized** - Semeru OpenJ9 variant uses 75% less memory
+
+## Obligatory Screenshot
+
+<img width="3840" height="4706" alt="nscr_webui_screenshot" src="https://github.com/user-attachments/assets/b4130d59-95b2-4d57-bb89-d7949255ee36" />
 
 ## Quick Start with Docker
 
@@ -160,6 +152,18 @@ docker run -p 7000:7000 nscr:semeru
 - **Compressed references** for reduced memory footprint
 - **Class data sharing** for faster startup
 - **Optimized garbage collection** (generational concurrent GC)
+
+## Why?
+
+There are only a few implementations of container registries out there. I basically want the SQLite of container registries. A simple, easy to use, and easy to understand container registry.
+
+I had wanted to try making my own container registry for a while now, and this is the result. One of my frustrations with the official registry is that it doesn't seem very well behaved when wanting to delete images, leaving garbage and bloating your disk space forever. This is especially annoying for using it in a CI/CD pipeline, where lots of images are being pushed and pulled constantly.
+
+This registry is implemented on top of an ACID database and we are able to safely delete images and reclaim disk space transactionally.
+
+I also wanted something that's really easy to set up and doesn't have a huge footprint.
+
+This is probably best suited for running behind your firewall and not exposed to the public internet, but in theory it could be used as as a public registry if you really wanted to.
 
 ## Scripts
 
