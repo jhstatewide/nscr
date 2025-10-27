@@ -95,7 +95,24 @@ class IntegrationTest {
         val availablePort = serverSocket.localPort
         serverSocket.close()
         
+        val logger = KotlinLogging.logger { }
+        logger.info { "Starting integration test with Docker client on port $availablePort" }
+        val blobStore = H2BlobStore(testBlobStoreDirectory)
+        
+        // Start the registry server first
+        val registryApp = RegistryServerApp(logger, blobStore)
+        registryApp.start(availablePort)
+        
+        // Wait a moment for the server to start
+        Thread.sleep(1000)
+        
+        // Get number of blobs from blobStore before push
+        val numBlobs = blobStore.countBlobs()
+        logger.debug { "Initial blob count: $numBlobs" }
+
+        // Configure Docker client to use the registry
         val config: DockerClientConfig = DefaultDockerClientConfig.createDefaultConfigBuilder()
+            .withDockerHost("unix:///var/run/docker.sock")
             .withRegistryUrl("http://localhost:$availablePort")
             .withCustomSslConfig(null)
             .build()
@@ -108,31 +125,40 @@ class IntegrationTest {
             .build()
 
         val dockerClient = DockerClientImpl.getInstance(config, httpClient)
-        dockerClient.pingCmd().exec()
+        
+        // Test Docker daemon connection
+        try {
+            dockerClient.pingCmd().exec()
+            logger.debug { "Docker daemon is accessible" }
+        } catch (e: Exception) {
+            logger.warn { "Docker daemon ping failed: ${e.message}" }
+        }
 
         val hostedTaggedImage = "localhost:$availablePort/ubuntu:20.04"
+        logger.debug { "Using image: $hostedTaggedImage" }
 
+        // Pull the base image first
         val cb = ResultCallback.Adapter<PullResponseItem>()
         dockerClient.pullImageCmd("ubuntu:20.04").exec(cb).awaitCompletion()
         cb.awaitCompletion()
+        logger.debug { "Successfully pulled ubuntu:20.04" }
 
+        // Tag the image for our registry
         dockerClient.tagImageCmd("ubuntu:20.04", "localhost:$availablePort/ubuntu", "20.04").exec()
+        logger.debug { "Successfully tagged image for registry" }
 
-        val logger = KotlinLogging.logger { }
-        logger.info { "Starting integration test with Docker client" }
-        val blobStore = H2BlobStore(testBlobStoreDirectory)
-        RegistryServerApp(logger, blobStore).start(availablePort)
-
-        // Get number of blobs from blobStore before push
-        val numBlobs = blobStore.countBlobs()
-
+        // Push to our registry
         val cb2 = ResultCallback.Adapter<PushResponseItem>()
         dockerClient.pushImageCmd(hostedTaggedImage).exec(cb2).awaitCompletion()
         cb2.awaitCompletion()
+        logger.debug { "Successfully pushed image to registry" }
+        
+        // Check blob count after push
+        val newBlobCount = blobStore.countBlobs()
+        logger.debug { "Blob count after push: $newBlobCount (was: $numBlobs)" }
         
         // Expect numBlobs to be greater than it was
-        assertTrue(numBlobs < blobStore.countBlobs(), "Blob count should increase after push")
-        logger.debug { "numBlobs: $numBlobs. New count: ${blobStore.countBlobs()}" }
+        assertTrue(numBlobs < newBlobCount, "Blob count should increase after push (was: $numBlobs, now: $newBlobCount)")
 
         // Let's make sure we got a manifest as well...
         val manifest = blobStore.getManifest(ImageVersion("ubuntu", "20.04"))
