@@ -6,6 +6,7 @@ import io.javalin.Javalin
 import mu.KotlinLogging
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -82,6 +83,7 @@ class RegistryTortureTestTest {
     }
 
     @Test
+    @Tag("torture")
     fun `run torture test against local server`() {
         logger.info { "Starting torture test against localhost:$serverPort" }
         

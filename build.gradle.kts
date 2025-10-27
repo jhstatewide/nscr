@@ -55,19 +55,26 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    
+    // Exclude torture tests from regular test runs
+    // Torture tests should only run in CI or when explicitly requested
+    useJUnitPlatform {
+        excludeTags("torture")
+    }
 
     // Automatically clean up test data after tests complete
     finalizedBy("cleanupTestData")
 }
 
+
 tasks.withType<JavaCompile> {
-    sourceCompatibility = "17"
-    targetCompatibility = "17"
+    sourceCompatibility = "21"
+    targetCompatibility = "21"
 }
 
 tasks.withType<KotlinCompile>() {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 

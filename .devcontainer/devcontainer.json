@@ -1,0 +1,49 @@
+{
+  "name": "nscr devcontainer",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest"
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=gradle-cache,target=/home/vscode/.gradle,type=volume",
+    "source=npm-cache,target=/home/vscode/.npm,type=volume"
+  ],
+  "forwardPorts": [7000, 9999],
+  "portsAttributes": {
+    "7000": { "label": "NSCR HTTP" },
+    "9999": { "label": "JMX (runProfile)" }
+  },
+  "remoteEnv": {
+    "NSCR_SHUTDOWN_ENDPOINT_ENABLED": "true"
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y lsof wget unzip && wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip && sudo unzip -d /opt /tmp/gradle.zip && sudo ln -s /opt/gradle-8.5/bin/gradle /usr/local/bin/gradle && rm /tmp/gradle.zip && ./gradlew --version && cd frontend && npm ci",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-gradle",
+        "vscjava.vscode-java-pack",
+        "fwcd.kotlin",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-github-actions"
+      ]
+    }
+  }
+}
